@@ -1,0 +1,149 @@
+openapi: 3.0.3
+info:
+  title: Aldaro API
+  version: "0.1"
+servers:
+  - url: https://api.aldaro.ai
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+
+  /auth/signup:
+    post:
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Created
+
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /billing/setup-intent:
+    post:
+      summary: Create Stripe SetupIntent client_secret
+      responses:
+        "200":
+          description: OK
+
+  /billing/status:
+    get:
+      summary: Billing status
+      responses:
+        "200":
+          description: OK
+
+  /workspaces:
+    get:
+      summary: List user workspaces
+      responses:
+        "200":
+          description: OK
+
+  /workspaces/launch:
+    post:
+      summary: Launch workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gpu_type]
+              properties:
+                gpu_type: { type: string }
+                region: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /workspaces/{id}:
+    get:
+      summary: Get workspace detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /workspaces/{id}/stop:
+    post:
+      summary: Stop workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /workspaces/{id}/terminate:
+    post:
+      summary: Terminate workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /internal/agent/verify-result:
+    post:
+      summary: Agent posts verification result
+      responses:
+        "200":
+          description: OK
+
+  /internal/agent/heartbeat:
+    post:
+      summary: Agent heartbeat
+      responses:
+        "200":
+          description: OK
+
+  /admin/health:
+    get:
+      summary: Admin system health
+      responses:
+        "200":
+          description: OK
+
+  /admin/warm-pool:
+    get:
+      summary: Warm pool state
+      responses:
+        "200":
+          description: OK

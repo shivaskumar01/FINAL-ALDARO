@@ -1,0 +1,54 @@
+{
+  "totals": {
+    "workspace": 106,
+    "usage": 0,
+    "cleanup": 0,
+    "meterOutbox": 0,
+    "emailOutbox": 9
+  },
+  "byStatus": {
+    "workspaces": [
+      {
+        "_count": {
+          "_all": 25
+        },
+        "status": "CREATING"
+      },
+      {
+        "_count": {
+          "_all": 52
+        },
+        "status": "FAILED"
+      },
+      {
+        "_count": {
+          "_all": 20
+        },
+        "status": "TERMINATED"
+      },
+      {
+        "_count": {
+          "_all": 2
+        },
+        "status": "TERMINATING"
+      },
+      {
+        "_count": {
+          "_all": 7
+        },
+        "status": "WAITING_FOR_AGENT"
+      }
+    ],
+    "cleanupJobs": [],
+    "meterOutbox": [],
+    "emailOutbox": [
+      {
+        "_count": {
+          "_all": 9
+        },
+        "status": "PENDING"
+      }
+    ]
+  },
+  "endedSessions": 0
+}

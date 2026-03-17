@@ -1,0 +1,37 @@
+{
+  "name": "aldaro",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "worker",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @aldaro/web",
+    "dev:api": "npm run dev -w @aldaro/api",
+    "dev:worker": "npm run dev -w @aldaro/worker",
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "test:integration": "TS_NODE_PROJECT=tests/tsconfig.json mocha --require ts-node/register/transpile-only --extension ts \"tests/integration/**/*.test.ts\" --timeout 600000",
+    "preflight": "node scripts/preflight-check.js",
+    "proof:20x": "./scripts/run-20x-proof.sh",
+    "export:sessions": "node scripts/export-workspace-sessions.js",
+    "export:ports": "node scripts/export-port-leases.js",
+    "export:proxmox": "node scripts/export-proxmox-tasks.js",
+    "verify:billing-parity": "node scripts/verify-billing-parity.js",
+    "verify:cleanup": "node scripts/verify-cleanup.js",
+    "db:seed": "npm run prisma:seed -w @aldaro/db",
+    "db:reset": "npm run prisma:reset -w @aldaro/db",
+    "audit": "npm audit --audit-level=high"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "chai": "^4.3.0",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}

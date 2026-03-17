@@ -1,0 +1,19 @@
+{
+  "primary": {
+    "users": 26,
+    "workspaces": 106,
+    "usage": 0,
+    "emailOutbox": 9,
+    "meterOutbox": 0,
+    "cleanupJobs": 0
+  },
+  "restored": {
+    "users": 26,
+    "workspaces": 106,
+    "usage": 0,
+    "emailOutbox": 9,
+    "meterOutbox": 0,
+    "cleanupJobs": 0
+  },
+  "match": true
+}

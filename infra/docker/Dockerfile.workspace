@@ -1,0 +1,33 @@
+FROM nvidia/cuda:12.2.0-base-ubuntu22.04
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    curl \
+    git \
+    openssh-server \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ML stack
+RUN pip3 install --upgrade pip
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+RUN pip3 install jupyterlab requests
+
+# Install code-server
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
+# Setup Aldaro agent
+RUN mkdir -p /opt/aldaro
+COPY verify.py entrypoint.sh report_verify.py heartbeat_loop.py /opt/aldaro/
+RUN chmod +x /opt/aldaro/entrypoint.sh
+
+# SSH config
+RUN mkdir /var/run/sshd
+RUN echo 'root:root' | chpasswd
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+EXPOSE 22 8888 8080
+
+ENTRYPOINT ["/opt/aldaro/entrypoint.sh"]

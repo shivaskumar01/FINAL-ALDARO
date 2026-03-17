@@ -1,0 +1,18 @@
+[project]
+name = "aldaro"
+version = "0.1.0"
+description = "Aldaro.Ai CLI for hourly GPU runs"
+dependencies = [
+    "click>=8.1.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.4.0",
+    "pyyaml>=6.0.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+aldaro = "aldaro_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

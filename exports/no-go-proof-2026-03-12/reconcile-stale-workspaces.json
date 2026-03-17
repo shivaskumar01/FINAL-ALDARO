@@ -1,0 +1,25 @@
+{
+  "cutoff": "2026-03-12T06:36:05.858Z",
+  "before": {
+    "total": 34,
+    "byStatus": {
+      "CREATING": 25,
+      "WAITING_FOR_AGENT": 7,
+      "TERMINATING": 2
+    }
+  },
+  "safeCandidateCount": 34,
+  "disposition": {
+    "failedFromCreating": 25,
+    "failedFromWaiting": 7,
+    "terminatedFromTerminating": 2
+  },
+  "after": {
+    "total": 0,
+    "byStatus": {
+      "CREATING": 0,
+      "WAITING_FOR_AGENT": 0,
+      "TERMINATING": 0
+    }
+  }
+}

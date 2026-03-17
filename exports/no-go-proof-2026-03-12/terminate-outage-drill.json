@@ -1,0 +1,36 @@
+{
+  "workspaceId": "58a81693-fd9b-47bf-9418-a82069557106",
+  "before": {
+    "status": "PENDING",
+    "attemptCount": 0,
+    "lastErrorCode": null,
+    "lastErrorMessage": null,
+    "nextAttemptAt": "2026-03-12T07:16:58.706Z"
+  },
+  "afterOutage": {
+    "status": "RETRY",
+    "attemptCount": 1,
+    "lastErrorCode": "ECONNREFUSED",
+    "lastErrorMessage": "connect ECONNREFUSED 127.0.0.1:5999",
+    "nextAttemptAt": "2026-03-12T07:17:08.777Z"
+  },
+  "wsAfterOutage": {
+    "status": "TERMINATING",
+    "cleanupLastErrorCode": "ECONNREFUSED",
+    "cleanupLastErrorMessage": "connect ECONNREFUSED 127.0.0.1:5999"
+  },
+  "afterRecovery": {
+    "status": "DONE",
+    "attemptCount": 2,
+    "lastErrorCode": null,
+    "lastErrorMessage": null,
+    "nextAttemptAt": null,
+    "completedAt": "2026-03-12T07:16:58.790Z"
+  },
+  "wsAfterRecovery": {
+    "status": "TERMINATED",
+    "terminatedAt": "2026-03-12T07:16:58.789Z",
+    "cleanupLastErrorCode": null,
+    "cleanupLastErrorMessage": null
+  }
+}

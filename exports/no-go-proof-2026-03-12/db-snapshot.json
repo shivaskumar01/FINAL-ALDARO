@@ -1,0 +1,36 @@
+{
+  "totals": {
+    "workspace": 106,
+    "usage": 0,
+    "cleanup": 0,
+    "meterOutbox": 0,
+    "emailOutbox": 9
+  },
+  "byStatus": {
+    "workspaces": [
+      {
+        "_count": {
+          "_all": 84
+        },
+        "status": "FAILED"
+      },
+      {
+        "_count": {
+          "_all": 22
+        },
+        "status": "TERMINATED"
+      }
+    ],
+    "cleanupJobs": [],
+    "meterOutbox": [],
+    "emailOutbox": [
+      {
+        "_count": {
+          "_all": 9
+        },
+        "status": "PENDING"
+      }
+    ]
+  },
+  "endedSessions": 0
+}
