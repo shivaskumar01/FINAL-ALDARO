@@ -8,6 +8,7 @@ import {
   SUPPORTED_CUSTOMER_GPU_KEYS,
   SupportedCustomerGpuKey,
 } from '../lib/supportedGpus';
+import { llmParseWorkload } from '../lib/llmParser';
 
 const prisma = new PrismaClient();
 
@@ -33,6 +34,7 @@ const requestSchema = z.object({
   advanced: advancedSchema.nullable().optional(),
   objective: z.enum(['SUCCESS_RATE', 'LOWEST_COST', 'FASTEST', 'SMALLEST_CLUSTER']).optional(),
   showRisky: z.boolean().optional(),
+  useLlmParser: z.boolean().optional(),
 });
 
 type RecommendationObjective = z.infer<typeof requestSchema>['objective'] extends infer T
@@ -283,6 +285,37 @@ function parseTextWorkload(inputText: string): Parsed {
     gradientCheckpointing,
     confidence,
   };
+}
+
+async function mergeWithLlmParsed(regexParsed: Parsed, inputText: string): Promise<{ merged: Parsed; llmLatencyMs: number | null }> {
+  const result = await llmParseWorkload(inputText);
+  if (!result) return { merged: regexParsed, llmLatencyMs: null };
+
+  const { params: llm, latencyMs } = result;
+
+  const merged: Parsed = {
+    ...regexParsed,
+    modelFamily: llm.modelFamily ?? regexParsed.modelFamily,
+    paramsB: llm.paramsB ?? regexParsed.paramsB,
+    paramsEstimateAssumed: llm.paramsB != null ? false : regexParsed.paramsEstimateAssumed,
+    method: llm.method ?? regexParsed.method,
+    samples: llm.samples ?? regexParsed.samples,
+    sampleEstimateAssumed: llm.samples != null ? false : regexParsed.sampleEstimateAssumed,
+    tokensPerSample: llm.tokensPerSample ?? regexParsed.tokensPerSample,
+    contextLen: llm.contextLen ?? regexParsed.contextLen,
+    epochs: llm.epochs ?? regexParsed.epochs,
+    microBatchPerGpu: llm.batchSize ?? regexParsed.microBatchPerGpu,
+    effectiveBatchSize: llm.effectiveBatchSize ?? regexParsed.effectiveBatchSize,
+    precision: llm.precision ?? regexParsed.precision,
+    packingMode: llm.packingMode ?? regexParsed.packingMode,
+    gradientCheckpointing: llm.gradientCheckpointing ?? regexParsed.gradientCheckpointing,
+    distributedRequested: llm.distributedRequested || regexParsed.distributedRequested,
+    loraRank: llm.loraRank ?? regexParsed.loraRank,
+    zeroStage: llm.zeroStage ?? regexParsed.zeroStage,
+    confidence: Math.max(regexParsed.confidence, 0.85),
+  };
+
+  return { merged, llmLatencyMs: latencyMs };
 }
 
 function parseWorkload(inputText: string, advanced?: z.infer<typeof advancedSchema> | null): Parsed {
@@ -723,7 +756,19 @@ export const recommendRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       return reply.status(400).send({ error: 'Invalid request.' });
     }
 
-    const parsed = parseWorkload(body.data.inputText, body.data.advanced ?? null);
+    let parsed = parseWorkload(body.data.inputText, body.data.advanced ?? null);
+    let llmLatencyMs: number | null = null;
+
+    // Use LLM parser when requested and no advanced overrides
+    if (body.data.useLlmParser && !body.data.advanced) {
+      const llmResult = await mergeWithLlmParsed(parsed, body.data.inputText);
+      parsed = llmResult.merged;
+      llmLatencyMs = llmResult.llmLatencyMs;
+      if (llmLatencyMs != null) {
+        request.log.info({ llmLatencyMs }, 'LLM parser completed');
+      }
+    }
+
     const analysis = buildWorkloadAnalysis(parsed);
 
     const hasMinimumEstimationInputs = Boolean(parsed.paramsB && parsed.method && parsed.samples);
