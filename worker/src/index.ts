@@ -6,6 +6,7 @@ import { emailOutboxTick } from './jobs/email-outbox';
 import { fleetDailyAggBackfill, fleetDailyAggTodayRefresh } from './jobs/fleet-daily-agg';
 import { processWorkspaceCleanupJobs } from './jobs/workspace-cleanup';
 import { processWorkspaceMeterEvents } from './jobs/workspace-metering';
+import { runExecutorTick } from './jobs/run-executor';
 import { getProxmoxProvider } from './providers/proxmoxFleet';
 import crypto from 'crypto';
 
@@ -34,6 +35,7 @@ const INCIDENT_TICK_MS = 30 * 1000;
 const EMAIL_OUTBOX_TICK_MS = 30 * 1000;
 const WORKSPACE_CLEANUP_TICK_MS = 15 * 1000;
 const WORKSPACE_METERING_TICK_MS = 15 * 1000;
+const RUN_EXECUTOR_TICK_MS = 5 * 1000;
 const FLEET_AGG_TODAY_REFRESH_MS = 60 * 60 * 1000; // hourly
 const RETENTION_TICK_MS = 60 * 60 * 1000; // 1 hour (runs once when conditions met)
 const LEADER_LOCK_ID = 1001; // Postgres advisory lock ID for worker leader
@@ -190,6 +192,7 @@ let lastRetentionDate: string | null = null; // Run retention once per day
 let lastEmailOutboxTick = 0;
 let lastWorkspaceCleanupTick = 0;
 let lastWorkspaceMeteringTick = 0;
+let lastRunExecutorTick = 0;
 let lastFleetAggTick = 0;
 let lastFleetAggDate: string | null = null; // Run backfill once per day
 
@@ -262,6 +265,16 @@ async function leaderTick() {
       await processWorkspaceMeterEvents(prisma);
     } catch (err) {
       console.error('Error in processWorkspaceMeterEvents:', err);
+    }
+  }
+
+  // Run Executor Tick (drive ML run lifecycle)
+  if (now - lastRunExecutorTick >= RUN_EXECUTOR_TICK_MS) {
+    lastRunExecutorTick = now;
+    try {
+      await runExecutorTick(prisma);
+    } catch (err) {
+      console.error('Error in runExecutorTick:', err);
     }
   }
 

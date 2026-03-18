@@ -11,83 +11,88 @@ datasource db {
 }
 
 model User {
-  id                               String        @id @default(uuid())
-  email                            String        @unique
-  passwordHash                     String
-  createdAt                        DateTime      @default(now())
-  lastLoginAt                      DateTime?
-  accountStatus                    String        @default("ACTIVE")
-  paymentStatus                    String        @default("NONE")
-  role                             String        @default("CUSTOMER")
-  lastReauthAt                     DateTime?
-  
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime?
+  accountStatus String    @default("ACTIVE")
+  paymentStatus String    @default("NONE")
+  role          String    @default("CUSTOMER")
+  lastReauthAt  DateTime?
+
   // Password reset fields
-  passwordResetTokenHash           String?
-  passwordResetExpiresAt           DateTime?
-  
-  stripeCustomerId                 String?
-  stripeDefaultPaymentMethodId     String?
-  maxActiveWorkspaces              Int           @default(1)
-  maxConcurrentRuns                Int           @default(2)
-  dailyRuntimeLimitMinutes         Int           @default(360)
-  dailySpendLimitSeconds           Int           @default(86400)
-  launchesPerHourLimit             Int           @default(3)
-  isAlphaTester                    Boolean       @default(false)
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+
+  stripeCustomerId             String?
+  stripeDefaultPaymentMethodId String?
+  maxActiveWorkspaces          Int     @default(1)
+  maxConcurrentRuns            Int     @default(2)
+  dailyRuntimeLimitMinutes     Int     @default(360)
+  dailySpendLimitSeconds       Int     @default(86400)
+  launchesPerHourLimit         Int     @default(3)
+  isAlphaTester                Boolean @default(false)
 
   // Manual customer approval (Author reviews applications)
-  customerAccessStatus             String        @default("PENDING_REVIEW") // PENDING_REVIEW | APPROVED | REJECTED | SUSPENDED
-  customerAccessUpdatedAt          DateTime?
-  customerAccessUpdatedById        String?
-  customerAccessReason             String?
+  customerAccessStatus      String    @default("PENDING_REVIEW") // PENDING_REVIEW | APPROVED | REJECTED | SUSPENDED
+  customerAccessUpdatedAt   DateTime?
+  customerAccessUpdatedById String?
+  customerAccessReason      String?
 
-  workspaces                       Workspace[]
-  customerApplications             CustomerApplication[] @relation("ApplicationUser")
-  emailOutboxRecipient              EmailOutbox[] @relation("EmailOutboxRecipient")
-  customerAccessUpdatedBy          User?         @relation("CustomerAccessUpdatedBy", fields: [customerAccessUpdatedById], references: [id])
-  usageSessions                    UsageSession[]
-  auditEvents                      SecurityLog[]
-  postsCreated                     AuthorPost[]  @relation("CreatedBy")
-  postsUpdated                     AuthorPost[]  @relation("UpdatedBy")
-  revisions                        AuthorPostRevision[]
-  banners                          AppBanner[]
-  authorAudit                      AuthorAudit[]
-  projects                         Project[]
-  runs                             Run[]
-  githubInstallations              GitHubInstallation[]
-  usersReviewedAsAuthor            User[]        @relation("CustomerAccessUpdatedBy")
-  applicationsReviewed             CustomerApplication[] @relation("ReviewedBy")
-  workloadRecommendationRequests  WorkloadRecommendationRequest[] @relation("WorkloadRecommendationRequestUser")
-  pricingSuggestionsApplied       PricingSuggestion[] @relation("PricingSuggestionAppliedBy")
-  launchOperations                WorkspaceLaunchOperation[]
-  workspaceMeterEvents            WorkspaceMeterEventOutbox[]
+  workspaces                     Workspace[]
+  customerApplications           CustomerApplication[]           @relation("ApplicationUser")
+  emailOutboxRecipient           EmailOutbox[]                   @relation("EmailOutboxRecipient")
+  customerAccessUpdatedBy        User?                           @relation("CustomerAccessUpdatedBy", fields: [customerAccessUpdatedById], references: [id])
+  usageSessions                  UsageSession[]
+  auditEvents                    SecurityLog[]
+  postsCreated                   AuthorPost[]                    @relation("CreatedBy")
+  postsUpdated                   AuthorPost[]                    @relation("UpdatedBy")
+  revisions                      AuthorPostRevision[]
+  banners                        AppBanner[]
+  authorAudit                    AuthorAudit[]
+  projects                       Project[]
+  runs                           Run[]
+  githubInstallations            GitHubInstallation[]
+  usersReviewedAsAuthor          User[]                          @relation("CustomerAccessUpdatedBy")
+  applicationsReviewed           CustomerApplication[]           @relation("ReviewedBy")
+  workloadRecommendationRequests WorkloadRecommendationRequest[] @relation("WorkloadRecommendationRequestUser")
+  pricingSuggestionsApplied      PricingSuggestion[]             @relation("PricingSuggestionAppliedBy")
+  launchOperations               WorkspaceLaunchOperation[]
+  workspaceMeterEvents           WorkspaceMeterEventOutbox[]
+
+  // Organizations
+  orgMemberships        OrgMembership[] @relation("OrgMembershipUser")
+  orgMembershipsInvited OrgMembership[] @relation("OrgMembershipInvitedBy")
+  orgInvitationsSent    OrgInvitation[] @relation("OrgInvitationInvitedBy")
 
   @@map("users")
 }
 
 model CustomerApplication {
-  id                  String    @id @default(cuid())
-  userId              String
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  submittedAt         DateTime  @default(now())
-  reviewedAt          DateTime?
-  reviewedById        String?
-  decision            String?   // APPROVED | REJECTED
-  decisionReason      String?
-  internalNotes       String?
-  fullName            String
-  email               String
-  company             String?
-  useCase             String?
-  expectedGpuTypes    String?
+  id                   String    @id @default(cuid())
+  userId               String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  submittedAt          DateTime  @default(now())
+  reviewedAt           DateTime?
+  reviewedById         String?
+  decision             String? // APPROVED | REJECTED
+  decisionReason       String?
+  internalNotes        String?
+  fullName             String
+  email                String
+  company              String?
+  useCase              String?
+  expectedGpuTypes     String?
   expectedHoursPerWeek Int?
-  regionPreference    String?
-  website             String?
-  referralSource      String?
+  regionPreference     String?
+  website              String?
+  referralSource       String?
 
-  user                User      @relation("ApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
-  reviewedBy          User?     @relation("ReviewedBy", fields: [reviewedById], references: [id])
-  emailOutbox         EmailOutbox[]
+  user        User          @relation("ApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy  User?         @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  emailOutbox EmailOutbox[]
 
   @@index([userId])
   @@index([decision, submittedAt])
@@ -97,7 +102,7 @@ model CustomerApplication {
 
 model EmailOutbox {
   id                String    @id @default(cuid())
-  type              String    // APPLICATION_IN_REVIEW | APPLICATION_ACCEPTED | APPLICATION_REJECTED
+  type              String // APPLICATION_IN_REVIEW | APPLICATION_ACCEPTED | APPLICATION_REJECTED
   toEmail           String
   userId            String?
   applicationId     String?
@@ -113,8 +118,8 @@ model EmailOutbox {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  application       CustomerApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  recipient         User?     @relation("EmailOutboxRecipient", fields: [userId], references: [id], onDelete: SetNull)
+  application CustomerApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  recipient   User?                @relation("EmailOutboxRecipient", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([type])
@@ -122,8 +127,8 @@ model EmailOutbox {
 }
 
 model WorkloadRecommendationRequest {
-  id                  String    @id @default(cuid())
-  createdAt           DateTime  @default(now())
+  id                  String   @id @default(cuid())
+  createdAt           DateTime @default(now())
   userId              String?
   inputText           String
   parsedJson          String?
@@ -133,7 +138,7 @@ model WorkloadRecommendationRequest {
   latencyMs           Int?
   errorCode           String?
 
-  user                User?     @relation("WorkloadRecommendationRequestUser", fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation("WorkloadRecommendationRequestUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([userId])
@@ -141,20 +146,20 @@ model WorkloadRecommendationRequest {
 }
 
 model FleetDailyAgg {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   date              DateTime
   gpuType           String
-  gpuCount          Int       @default(0)
-  gpuHoursAvailable Decimal   @default(0)
-  gpuHoursUsed      Decimal   @default(0)
-  utilizationPct    Decimal   @default(0)
-  revenueUsd        Decimal   @default(0)
-  sessionsCount     Int       @default(0)
-  uniqueCustomers   Int       @default(0)
-  newSignups        Int       @default(0)
-  newApprovals      Int       @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  gpuCount          Int      @default(0)
+  gpuHoursAvailable Decimal  @default(0)
+  gpuHoursUsed      Decimal  @default(0)
+  utilizationPct    Decimal  @default(0)
+  revenueUsd        Decimal  @default(0)
+  sessionsCount     Int      @default(0)
+  uniqueCustomers   Int      @default(0)
+  newSignups        Int      @default(0)
+  newApprovals      Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([date, gpuType])
   @@index([date])
@@ -174,7 +179,7 @@ model PricingSuggestion {
   appliedByUserId String?
   appliedAt       DateTime?
 
-  appliedBy       User?     @relation("PricingSuggestionAppliedBy", fields: [appliedByUserId], references: [id], onDelete: SetNull)
+  appliedBy User? @relation("PricingSuggestionAppliedBy", fields: [appliedByUserId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([gpuType])
@@ -183,67 +188,70 @@ model PricingSuggestion {
 }
 
 model GitHubInstallation {
-  id              String    @id @default(uuid())
-  userId          String
-  installationId  String    @unique
-  accountName     String?
-  accountAvatar   String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String   @id @default(uuid())
+  userId         String
+  installationId String   @unique
+  accountName    String?
+  accountAvatar  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  user            User      @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("github_installations")
 }
 
 model Project {
-  id             String    @id @default(uuid())
-  userId         String
-  name           String
-  repoUrl        String
-  defaultBranch  String    @default("main")
-  visibility     String    @default("private")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String   @id @default(uuid())
+  userId        String
+  name          String
+  repoUrl       String
+  defaultBranch String   @default("main")
+  visibility    String   @default("private")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  user           User      @relation(fields: [userId], references: [id])
-  runs           Run[]
+  orgId        String?
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [orgId], references: [id])
+  runs         Run[]
 
   @@index([userId])
+  @@index([orgId])
   @@map("projects")
 }
 
 model Run {
-  id                String    @id @default(uuid())
-  projectId         String
-  userId            String
-  status            String    @default("created")
-  gpuType           String
-  gpuCount          Int       @default(1)
-  hoursMax          Int       @default(2)
-  command           String
-  envJson           String?
-  artifactPathsJson String?
-  upstreamInstanceId String?   @unique
-  billedSeconds     Int       @default(0)
+  id                  String    @id @default(uuid())
+  projectId           String
+  userId              String
+  status              String    @default("created")
+  gpuType             String
+  gpuCount            Int       @default(1)
+  hoursMax            Int       @default(2)
+  command             String
+  envJson             String?
+  artifactPathsJson   String?
+  upstreamInstanceId  String?   @unique
+  billedSeconds       Int       @default(0)
   stripeUsageReported Boolean   @default(false)
-  version           String?
-  infraStartedAt    DateTime?
-  infraFinishedAt   DateTime?
-  startedAt         DateTime?
-  finishedAt        DateTime?
-  exitCode          Int?
-  errorMessage      String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  version             String?
+  infraStartedAt      DateTime?
+  infraFinishedAt     DateTime?
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  exitCode            Int?
+  errorMessage        String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  project           Project   @relation(fields: [projectId], references: [id])
-  user              User      @relation(fields: [userId], references: [id])
-  events            RunEvent[]
-  logs              RunLog[]
-  artifacts         Artifact[]
-  agentSessions     AgentSession[]
+  project       Project        @relation(fields: [projectId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  events        RunEvent[]
+  logs          RunLog[]
+  artifacts     Artifact[]
+  agentSessions AgentSession[]
 
   @@index([projectId])
   @@index([userId])
@@ -258,7 +266,7 @@ model RunEvent {
   payload   String
   createdAt DateTime @default(now())
 
-  run       Run      @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id])
 
   @@index([runId])
   @@map("run_events")
@@ -272,7 +280,7 @@ model RunLog {
   seq       Int
   createdAt DateTime @default(now())
 
-  run       Run      @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id])
 
   @@index([runId])
   @@index([seq])
@@ -290,7 +298,7 @@ model Artifact {
   downloadUrl String?
   createdAt   DateTime @default(now())
 
-  run         Run      @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id])
 
   @@index([runId])
   @@map("artifacts")
@@ -307,58 +315,58 @@ model AgentSession {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  run                      Run       @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id])
 
   @@index([runId])
   @@map("agent_sessions")
 }
 
 model Workspace {
-  id                    String             @id @default(uuid())
-  status                String
-  region                String             @default("US")
-  gpuType               String
-  gpuCount              Int                @default(1)
-  imageType             String             @default("BASE_ML_V1")
-  isWarmPool            Boolean            @default(false)
-  assignedUserId        String?
-  
+  id             String  @id @default(uuid())
+  status         String
+  region         String  @default("US")
+  gpuType        String
+  gpuCount       Int     @default(1)
+  imageType      String  @default("BASE_ML_V1")
+  isWarmPool     Boolean @default(false)
+  assignedUserId String?
+
   // Proxmox backing
-  proxmoxNode           String?
-  proxmoxVmid           Int?
-  vmInternalIp          String?
+  proxmoxNode  String?
+  proxmoxVmid  Int?
+  vmInternalIp String?
 
   // Gateway exposure
-  gatewayHost           String?
-  portSsh               Int?
-  portJupyter           Int?
-  portVscode            Int?
+  gatewayHost String?
+  portSsh     Int?
+  portJupyter Int?
+  portVscode  Int?
 
-  connectSshCommand     String?
-  connectJupyterUrl     String?
-  connectVscodeUrl      String?
+  connectSshCommand String?
+  connectJupyterUrl String?
+  connectVscodeUrl  String?
 
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  assignedAt            DateTime?
-  startedAt             DateTime?          // When workspace reached RUNNING
-  terminatedAt          DateTime?
-  failedAt              DateTime?          // When workspace reached FAILED
-  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  assignedAt   DateTime?
+  startedAt    DateTime? // When workspace reached RUNNING
+  terminatedAt DateTime?
+  failedAt     DateTime? // When workspace reached FAILED
+
   // Provisioning tracking
-  provisionStartedAt    DateTime?
-  cloneCompletedAt      DateTime?
-  gpuAttachedAt         DateTime?
-  bootCompletedAt       DateTime?
-  ipDiscoveredAt        DateTime?
-  agentRegisteredAt     DateTime?
-  
+  provisionStartedAt DateTime?
+  cloneCompletedAt   DateTime?
+  gpuAttachedAt      DateTime?
+  bootCompletedAt    DateTime?
+  ipDiscoveredAt     DateTime?
+  agentRegisteredAt  DateTime?
+
   // Connection tracking
-  firstConnectAt        DateTime?
-  lastConnectAt         DateTime?
-  connectCount          Int                @default(0)
-  
-  verificationStatus    String             @default("PENDING")
+  firstConnectAt DateTime?
+  lastConnectAt  DateTime?
+  connectCount   Int       @default(0)
+
+  verificationStatus    String    @default("PENDING")
   verificationScore     Int?
   lastHealthCheckAt     DateTime?
   lastAgentHeartbeatAt  DateTime?
@@ -370,28 +378,30 @@ model Workspace {
   lastDiskUsedMb        Int?
   lastNetworkRxMb       Int?
   lastNetworkTxMb       Int?
-  
+
   // Error tracking
-  lastErrorCode         String?
-  lastErrorMessage      String?
-  maxDurationMinutes    Int?               // Auto-terminate after N minutes (null = unlimited)
-  terminationReason     String?            // idle, manual, failed, billing, budget_limit
-  launchOperationKey    String?
-  cleanupAttemptCount   Int                @default(0)
-  cleanupLastAttemptAt  DateTime?
-  cleanupNextRetryAt    DateTime?
-  cleanupLastErrorCode  String?
+  lastErrorCode           String?
+  lastErrorMessage        String?
+  maxDurationMinutes      Int? // Auto-terminate after N minutes (null = unlimited)
+  terminationReason       String? // idle, manual, failed, billing, budget_limit
+  launchOperationKey      String?
+  cleanupAttemptCount     Int       @default(0)
+  cleanupLastAttemptAt    DateTime?
+  cleanupNextRetryAt      DateTime?
+  cleanupLastErrorCode    String?
   cleanupLastErrorMessage String?
 
-  assignedUser          User?              @relation(fields: [assignedUserId], references: [id])
-  verifications         WorkspaceVerification[]
-  usageSessions         UsageSession[]
-  gpuAllocation         WorkspaceGpuAllocation?
-  endpoint              WorkspaceEndpoint?
-  experienceEvents      ExperienceEvent[]
-  launchOperation       WorkspaceLaunchOperation? @relation("WorkspaceLaunchOperationWorkspace")
-  cleanupJob            WorkspaceCleanupJob?      @relation("WorkspaceCleanupJobWorkspace")
-  meterEvents           WorkspaceMeterEventOutbox[]
+  orgId            String?
+  assignedUser     User?                       @relation(fields: [assignedUserId], references: [id])
+  organization     Organization?               @relation(fields: [orgId], references: [id])
+  verifications    WorkspaceVerification[]
+  usageSessions    UsageSession[]
+  gpuAllocation    WorkspaceGpuAllocation?
+  endpoint         WorkspaceEndpoint?
+  experienceEvents ExperienceEvent[]
+  launchOperation  WorkspaceLaunchOperation?   @relation("WorkspaceLaunchOperationWorkspace")
+  cleanupJob       WorkspaceCleanupJob?        @relation("WorkspaceCleanupJobWorkspace")
+  meterEvents      WorkspaceMeterEventOutbox[]
 
   @@index([status])
   @@index([status, updatedAt])
@@ -403,23 +413,24 @@ model Workspace {
   @@index([gpuType, status])
   @@index([proxmoxNode, status])
   @@index([status, cleanupNextRetryAt])
+  @@index([orgId])
   @@map("workspaces")
 }
 
 model WorkspaceLaunchOperation {
-  id               String    @id @default(cuid())
+  id               String   @id @default(cuid())
   userId           String
   operationKey     String
   requestHash      String
   workspaceId      String?
-  status           String    @default("PROCESSING") // PROCESSING | COMPLETED | FAILED
+  status           String   @default("PROCESSING") // PROCESSING | COMPLETED | FAILED
   lastErrorCode    String?
   lastErrorMessage String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace        Workspace? @relation("WorkspaceLaunchOperationWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation("WorkspaceLaunchOperationWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@unique([userId, operationKey])
   @@unique([workspaceId])
@@ -442,7 +453,7 @@ model WorkspaceCleanupJob {
   updatedAt        DateTime  @updatedAt
   completedAt      DateTime?
 
-  workspace        Workspace @relation("WorkspaceCleanupJobWorkspace", fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation("WorkspaceCleanupJobWorkspace", fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([status, nextAttemptAt])
   @@index([status, updatedAt])
@@ -450,9 +461,9 @@ model WorkspaceCleanupJob {
 }
 
 model WorkspaceVerification {
-  id                String    @id @default(uuid())
+  id                String   @id @default(uuid())
   workspaceId       String
-  ranAt             DateTime  @default(now())
+  ranAt             DateTime @default(now())
   gpuName           String?
   vramGb            Decimal?
   cudaVersion       String?
@@ -466,7 +477,7 @@ model WorkspaceVerification {
   pass              Boolean
   rawLog            String?
 
-  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
   @@index([ranAt])
@@ -474,23 +485,23 @@ model WorkspaceVerification {
 }
 
 model UsageSession {
-  id                    String             @id @default(uuid())
+  id                    String    @id @default(uuid())
   userId                String
   workspaceId           String
   gpuType               String?
   startTime             DateTime
   endTime               DateTime?
-  totalSeconds          Int                @default(0)
-  billedSeconds         Int                @default(0)
-  pricePerHourCents     Int                @default(0)
-  billedCents           Int                @default(0)
+  totalSeconds          Int       @default(0)
+  billedSeconds         Int       @default(0)
+  pricePerHourCents     Int       @default(0)
+  billedCents           Int       @default(0)
   stripePaymentIntentId String?
   stripeMeterEventId    String?
-  status                String             @default("RUNNING")
+  status                String    @default("RUNNING")
 
-  user                  User               @relation(fields: [userId], references: [id])
-  workspace             Workspace          @relation(fields: [workspaceId], references: [id])
-  meterOutbox           WorkspaceMeterEventOutbox?
+  user        User                       @relation(fields: [userId], references: [id])
+  workspace   Workspace                  @relation(fields: [workspaceId], references: [id])
+  meterOutbox WorkspaceMeterEventOutbox?
 
   @@index([userId])
   @@index([userId, startTime])
@@ -503,27 +514,27 @@ model UsageSession {
 }
 
 model WorkspaceMeterEventOutbox {
-  id                 String      @id @default(cuid())
-  usageSessionId     String      @unique
+  id                 String    @id @default(cuid())
+  usageSessionId     String    @unique
   userId             String
   workspaceId        String
-  eventName          String      @default("gpu_seconds")
+  eventName          String    @default("gpu_seconds")
   valueSeconds       Int
-  status             String      @default("PENDING") // PENDING | RETRY | SENT | FAILED
-  attemptCount       Int         @default(0)
-  maxAttempts        Int         @default(20)
+  status             String    @default("PENDING") // PENDING | RETRY | SENT | FAILED
+  attemptCount       Int       @default(0)
+  maxAttempts        Int       @default(20)
   lastAttemptAt      DateTime?
   nextAttemptAt      DateTime?
   stripeMeterEventId String?
   lastErrorCode      String?
   lastErrorMessage   String?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   sentAt             DateTime?
 
-  usageSession       UsageSession @relation(fields: [usageSessionId], references: [id], onDelete: Cascade)
-  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace          Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  usageSession UsageSession @relation(fields: [usageSessionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([status, nextAttemptAt])
   @@index([userId, createdAt])
@@ -532,60 +543,60 @@ model WorkspaceMeterEventOutbox {
 }
 
 model FleetNode {
-  id                    String    @id @default(uuid())
-  name                  String    @unique
-  apiHost               String
-  status                String    @default("ACTIVE")
-  createdAt             DateTime  @default(now())
-  lastSeenAt            DateTime?
-  lastHealthCheckAt     DateTime?
-  
+  id                String    @id @default(uuid())
+  name              String    @unique
+  apiHost           String
+  status            String    @default("ACTIVE")
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime?
+  lastHealthCheckAt DateTime?
+
   // Node health metrics
-  loadAverage           Decimal?
-  memoryUsedPct         Int?
-  diskUsedPct           Int?
-  diskFreeGb            Int?
-  vmCount               Int?
-  warmVmCount           Int?
-  
+  loadAverage   Decimal?
+  memoryUsedPct Int?
+  diskUsedPct   Int?
+  diskFreeGb    Int?
+  vmCount       Int?
+  warmVmCount   Int?
+
   // Failure tracking
-  provisionFailures24h  Int       @default(0)
-  lastProvisionFailAt   DateTime?
-  
-  gpus                  FleetGpu[]
-  gpuAllocations        WorkspaceGpuAllocation[]
+  provisionFailures24h Int       @default(0)
+  lastProvisionFailAt  DateTime?
+
+  gpus           FleetGpu[]
+  gpuAllocations WorkspaceGpuAllocation[]
 
   @@index([status])
   @@map("fleet_nodes")
 }
 
 model FleetGpu {
-  id                      String    @id @default(uuid())
-  nodeId                  String
-  gpuName                 String
-  gpuType                 String?   // RTX_5090, A100_80GB
-  pciAddress              String
-  vramGb                  Decimal?
-  serial                  String?
-  status                  String    @default("FREE")
-  failureCount            Int       @default(0)
-  lastVerificationPassAt  DateTime?
-  lastVerificationFailAt  DateTime?
-  createdAt               DateTime  @default(now())
-  lastSeenAt              DateTime?
-  
-  // Health metrics from heartbeat
-  lastTempC               Int?
-  lastUtilPct             Int?
-  lastMemUsedMb           Int?
-  eccErrors24h            Int       @default(0)
-  lastEccErrorAt          DateTime?
-  
-  // Current allocation
-  currentWorkspaceId      String?
+  id                     String    @id @default(uuid())
+  nodeId                 String
+  gpuName                String
+  gpuType                String? // RTX_5090, A100_80GB
+  pciAddress             String
+  vramGb                 Decimal?
+  serial                 String?
+  status                 String    @default("FREE")
+  failureCount           Int       @default(0)
+  lastVerificationPassAt DateTime?
+  lastVerificationFailAt DateTime?
+  createdAt              DateTime  @default(now())
+  lastSeenAt             DateTime?
 
-  node                    FleetNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  allocation              WorkspaceGpuAllocation?
+  // Health metrics from heartbeat
+  lastTempC      Int?
+  lastUtilPct    Int?
+  lastMemUsedMb  Int?
+  eccErrors24h   Int       @default(0)
+  lastEccErrorAt DateTime?
+
+  // Current allocation
+  currentWorkspaceId String?
+
+  node       FleetNode               @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  allocation WorkspaceGpuAllocation?
 
   @@unique([nodeId, pciAddress])
   @@index([status])
@@ -621,9 +632,9 @@ model WorkspaceGpuAllocation {
   allocatedAt DateTime  @default(now())
   releasedAt  DateTime?
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  gpu         FleetGpu  @relation(fields: [gpuId], references: [id])
-  node        FleetNode @relation(fields: [nodeId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  gpu       FleetGpu  @relation(fields: [gpuId], references: [id])
+  node      FleetNode @relation(fields: [nodeId], references: [id])
 
   @@map("workspace_gpu_allocations")
 }
@@ -638,21 +649,21 @@ model WorkspaceEndpoint {
   allocatedAt DateTime  @default(now())
   releasedAt  DateTime?
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("workspace_endpoints")
 }
 
 model SecurityLog {
-  id          String    @id @default(uuid())
-  createdAt   DateTime  @default(now())
-  userId      String?
-  eventType   String
-  ip          String?
-  userAgent   String?
-  eventData   String?
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  userId    String?
+  eventType String
+  ip        String?
+  userAgent String?
+  eventData String?
 
-  user        User?      @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
   @@index([createdAt])
   @@index([eventType])
@@ -661,30 +672,30 @@ model SecurityLog {
 }
 
 model AuthorPost {
-  id                String         @id @default(uuid())
-  title             String
-  slug              String         @unique
-  excerpt           String?
-  bodyMarkdown      String
-  bodyHtml          String?
-  visibility        String
-  status            String         @default("DRAFT")
-  tags              String         @default("[]")
-  coverImageUrl     String?
-  ctaText           String?
-  ctaUrl            String?
-  seoTitle          String?
-  seoDescription    String?
+  id                 String    @id @default(uuid())
+  title              String
+  slug               String    @unique
+  excerpt            String?
+  bodyMarkdown       String
+  bodyHtml           String?
+  visibility         String
+  status             String    @default("DRAFT")
+  tags               String    @default("[]")
+  coverImageUrl      String?
+  ctaText            String?
+  ctaUrl             String?
+  seoTitle           String?
+  seoDescription     String?
   scheduledPublishAt DateTime?
-  publishedAt       DateTime?
-  createdByUserId   String
-  updatedByUserId   String
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @default(now())
+  publishedAt        DateTime?
+  createdByUserId    String
+  updatedByUserId    String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now())
 
-  createdBy         User           @relation("CreatedBy", fields: [createdByUserId], references: [id])
-  updatedBy         User           @relation("UpdatedBy", fields: [updatedByUserId], references: [id])
-  revisions         AuthorPostRevision[]
+  createdBy User                 @relation("CreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy User                 @relation("UpdatedBy", fields: [updatedByUserId], references: [id])
+  revisions AuthorPostRevision[]
 
   @@index([status])
   @@index([visibility])
@@ -701,40 +712,40 @@ model AuthorPostRevision {
   updatedByUserId String
   createdAt       DateTime @default(now())
 
-  post            AuthorPost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  updatedBy       User       @relation(fields: [updatedByUserId], references: [id])
+  post      AuthorPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  updatedBy User       @relation(fields: [updatedByUserId], references: [id])
 
   @@index([postId])
   @@map("author_post_revisions")
 }
 
 model AppBanner {
-  id              String         @id @default(uuid())
-  enabled         Boolean        @default(false)
+  id              String    @id @default(uuid())
+  enabled         Boolean   @default(false)
   message         String?
-  severity        String         @default("INFO")
+  severity        String    @default("INFO")
   linkText        String?
   linkUrl         String?
   startAt         DateTime?
   endAt           DateTime?
   updatedByUserId String
-  updatedAt       DateTime       @default(now())
+  updatedAt       DateTime  @default(now())
 
-  updatedBy       User           @relation(fields: [updatedByUserId], references: [id])
+  updatedBy User @relation(fields: [updatedByUserId], references: [id])
 
   @@map("app_banner")
 }
 
 model AuthorAudit {
-  id           String   @id @default(uuid())
-  createdAt    DateTime @default(now())
-  actorUserId  String
-  action       String
-  targetType   String?
-  targetId     String?
-  diffJson     String?
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  actorUserId String
+  action      String
+  targetType  String?
+  targetId    String?
+  diffJson    String?
 
-  actor        User     @relation(fields: [actorUserId], references: [id])
+  actor User @relation(fields: [actorUserId], references: [id])
 
   @@index([createdAt])
   @@index([actorUserId])
@@ -742,27 +753,27 @@ model AuthorAudit {
 }
 
 model WarmPoolConfig {
-  id               String   @id @default(uuid())
-  region           String   @default("US")
-  gpuType          String
-  targetCount      Int      @default(1)
-  createdAt        DateTime @default(now())
+  id          String   @id @default(uuid())
+  region      String   @default("US")
+  gpuType     String
+  targetCount Int      @default(1)
+  createdAt   DateTime @default(now())
 
   @@unique([region, gpuType])
   @@map("warm_pool_config")
 }
 
 model GpuSku {
-  id                   String   @id @default(uuid())
-  key                  String   @unique
-  displayName          String
-  pricePerHourCents    Int
-  vramGb               Int
-  shortBadge           String
-  descriptionLines     String   @default("[]")
-  enabled              Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                String   @id @default(uuid())
+  key               String   @unique
+  displayName       String
+  pricePerHourCents Int
+  vramGb            Int
+  shortBadge        String
+  descriptionLines  String   @default("[]")
+  enabled           Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@map("gpu_skus")
 }
@@ -772,20 +783,20 @@ model GpuSku {
 // =============================================================================
 // Lightweight events for tracking user journey and experience metrics
 model ExperienceEvent {
-  id          String     @id @default(uuid())
-  createdAt   DateTime   @default(now())
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
   userId      String?
   workspaceId String?
-  type        String     // auth.login_success, workspace.created, connect.ssh_success, etc.
-  metadata    String?    // JSON with event-specific data
-  requestId   String?    // For correlating events in a request
-  clientIp    String?    // Hashed for privacy
-  latencyMs   Int?       // For timing events
-  errorCode   String?    // For failure events
-  protocol    String?    // ssh, jupyter, vscode (for connect events)
-  result      String?    // success, fail
+  type        String // auth.login_success, workspace.created, connect.ssh_success, etc.
+  metadata    String? // JSON with event-specific data
+  requestId   String? // For correlating events in a request
+  clientIp    String? // Hashed for privacy
+  latencyMs   Int? // For timing events
+  errorCode   String? // For failure events
+  protocol    String? // ssh, jupyter, vscode (for connect events)
+  result      String? // success, fail
 
-  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([userId, createdAt])
@@ -799,34 +810,34 @@ model ExperienceEvent {
 // =============================================================================
 // Aggregated event data for long-term history (raw events are deleted after 30 days)
 model DailyEventRollup {
-  id          String   @id @default(uuid())
-  date        DateTime // The date being aggregated
-  userId      String?  // Per-user rollups (null for system-wide)
-  gpuType     String?  // Per-GPU-type rollups
-  
+  id      String   @id @default(uuid())
+  date    DateTime // The date being aggregated
+  userId  String? // Per-user rollups (null for system-wide)
+  gpuType String? // Per-GPU-type rollups
+
   // Event counts by type
-  loginSuccessCount         Int @default(0)
-  loginFailCount            Int @default(0)
-  workspaceCreatedCount     Int @default(0)
-  workspaceStartedCount     Int @default(0)
-  workspaceFailedCount      Int @default(0)
-  workspaceTerminatedCount  Int @default(0)
-  connectSshSuccessCount    Int @default(0)
-  connectSshFailCount       Int @default(0)
+  loginSuccessCount          Int @default(0)
+  loginFailCount             Int @default(0)
+  workspaceCreatedCount      Int @default(0)
+  workspaceStartedCount      Int @default(0)
+  workspaceFailedCount       Int @default(0)
+  workspaceTerminatedCount   Int @default(0)
+  connectSshSuccessCount     Int @default(0)
+  connectSshFailCount        Int @default(0)
   connectJupyterSuccessCount Int @default(0)
-  connectJupyterFailCount   Int @default(0)
-  billingMeterEmittedCount  Int @default(0)
-  billingMeterFailCount     Int @default(0)
-  
+  connectJupyterFailCount    Int @default(0)
+  billingMeterEmittedCount   Int @default(0)
+  billingMeterFailCount      Int @default(0)
+
   // Timing metrics (averages)
-  avgProvisionLatencyMs     Float?
-  avgConnectLatencyMs       Float?
-  
+  avgProvisionLatencyMs Float?
+  avgConnectLatencyMs   Float?
+
   // Usage totals
-  totalGpuSeconds           Int @default(0)
-  totalBilledCents          Int @default(0)
-  
-  createdAt   DateTime @default(now())
+  totalGpuSeconds  Int @default(0)
+  totalBilledCents Int @default(0)
+
+  createdAt DateTime @default(now())
 
   @@unique([date, userId, gpuType])
   @@index([date])
@@ -839,19 +850,19 @@ model DailyEventRollup {
 // =============================================================================
 // Auto-generated and manual incidents for ops visibility
 model Incident {
-  id              String    @id @default(uuid())
-  type            String    // provision_failure_spike, orphan_vm_detected, etc.
-  severity        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
-  title           String
-  description     String?
-  firstSeenAt     DateTime  @default(now())
-  lastSeenAt      DateTime  @default(now())
-  count           Int       @default(1)
-  status          String    @default("OPEN") // OPEN, ACKED, RESOLVED
-  resolvedAt      DateTime?
-  ownerId         String?   // Author who acknowledged
-  notes           String?
-  
+  id          String    @id @default(uuid())
+  type        String // provision_failure_spike, orphan_vm_detected, etc.
+  severity    String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  title       String
+  description String?
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  count       Int       @default(1)
+  status      String    @default("OPEN") // OPEN, ACKED, RESOLVED
+  resolvedAt  DateTime?
+  ownerId     String? // Author who acknowledged
+  notes       String?
+
   // Affected resources (JSON arrays)
   affectedWorkspaceIds String? // JSON array
   affectedNodeIds      String? // JSON array
@@ -880,14 +891,14 @@ model WorkerLeader {
 // Author Portal: Configuration Change Tracking
 // =============================================================================
 model ConfigChange {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  actorId     String?  // User who made change (null for system)
-  configType  String   // warm_pool, idle_policy, pricing, etc.
-  configKey   String
-  oldValue    String?
-  newValue    String?
-  reason      String?
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  actorId    String? // User who made change (null for system)
+  configType String // warm_pool, idle_policy, pricing, etc.
+  configKey  String
+  oldValue   String?
+  newValue   String?
+  reason     String?
 
   @@index([createdAt])
   @@index([configType])
@@ -898,13 +909,77 @@ model ConfigChange {
 // Author Portal: Deploy Versions
 // =============================================================================
 model DeployVersion {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  service     String   // api, worker, gateway
-  version     String
-  commitHash  String?
-  deployedBy  String?
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  service    String // api, worker, gateway
+  version    String
+  commitHash String?
+  deployedBy String?
 
   @@index([service, createdAt])
   @@map("deploy_versions")
+}
+
+// =============================================================================
+// Teams & Organizations
+// =============================================================================
+model Organization {
+  id                           String   @id @default(uuid())
+  name                         String
+  slug                         String   @unique
+  stripeCustomerId             String?
+  stripeDefaultPaymentMethodId String?
+  billingEmail                 String?
+  plan                         String   @default("TEAM")
+  maxMembers                   Int      @default(5)
+  maxActiveWorkspaces          Int      @default(5)
+  maxConcurrentRuns            Int      @default(10)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  memberships OrgMembership[]
+  invitations OrgInvitation[]
+  workspaces  Workspace[]
+  projects    Project[]
+
+  @@map("organizations")
+}
+
+model OrgMembership {
+  id          String    @id @default(uuid())
+  orgId       String
+  userId      String
+  role        String    @default("MEMBER") // OWNER | ADMIN | MEMBER
+  invitedById String?
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  status      String    @default("PENDING") // PENDING | ACTIVE | REMOVED
+  createdAt   DateTime  @default(now())
+
+  org       Organization @relation(fields: [orgId], references: [id])
+  user      User         @relation("OrgMembershipUser", fields: [userId], references: [id])
+  invitedBy User?        @relation("OrgMembershipInvitedBy", fields: [invitedById], references: [id])
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@index([userId])
+  @@map("org_memberships")
+}
+
+model OrgInvitation {
+  id          String    @id @default(uuid())
+  orgId       String
+  email       String
+  role        String    @default("MEMBER") // ADMIN | MEMBER
+  invitedById String
+  tokenHash   String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  org       Organization @relation(fields: [orgId], references: [id])
+  invitedBy User         @relation("OrgInvitationInvitedBy", fields: [invitedById], references: [id])
+
+  @@unique([orgId, email])
+  @@map("org_invitations")
 }
