@@ -8,6 +8,7 @@ import { processWorkspaceCleanupJobs } from './jobs/workspace-cleanup';
 import { processWorkspaceMeterEvents } from './jobs/workspace-metering';
 import { runExecutorTick } from './jobs/run-executor';
 import { volumeManagerTick } from './jobs/volume-manager';
+import { updateSpotPrices } from './jobs/spot-pricing';
 import { getProxmoxProvider } from './providers/proxmoxFleet';
 import crypto from 'crypto';
 
@@ -38,6 +39,7 @@ const WORKSPACE_CLEANUP_TICK_MS = 15 * 1000;
 const WORKSPACE_METERING_TICK_MS = 15 * 1000;
 const RUN_EXECUTOR_TICK_MS = 5 * 1000;
 const VOLUME_MANAGER_TICK_MS = 15 * 1000;
+const SPOT_PRICING_TICK_MS = 5 * 60 * 1000; // 5 minutes
 const FLEET_AGG_TODAY_REFRESH_MS = 60 * 60 * 1000; // hourly
 const RETENTION_TICK_MS = 60 * 60 * 1000; // 1 hour (runs once when conditions met)
 const LEADER_LOCK_ID = 1001; // Postgres advisory lock ID for worker leader
@@ -196,6 +198,7 @@ let lastWorkspaceCleanupTick = 0;
 let lastWorkspaceMeteringTick = 0;
 let lastRunExecutorTick = 0;
 let lastVolumeManagerTick = 0;
+let lastSpotPricingTick = 0;
 let lastFleetAggTick = 0;
 let lastFleetAggDate: string | null = null; // Run backfill once per day
 
@@ -288,6 +291,16 @@ async function leaderTick() {
       await volumeManagerTick(prisma);
     } catch (err) {
       console.error('Error in volumeManagerTick:', err);
+    }
+  }
+
+  // Spot Pricing Tick (dynamic GPU pricing based on warm pool utilization)
+  if (now - lastSpotPricingTick >= SPOT_PRICING_TICK_MS) {
+    lastSpotPricingTick = now;
+    try {
+      await updateSpotPrices(prisma);
+    } catch (err) {
+      console.error('Error in updateSpotPrices:', err);
     }
   }
 

@@ -346,11 +346,27 @@ export class WorkspaceService {
     });
     if (existing) return;
 
-    const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
-    if (!sku) {
-      console.error(`[BILLING] GpuSku not found for key "${gpuType}" — session will have $0 pricing`);
+    // Use spot price from WarmPoolConfig if available, fall back to GpuSku base price
+    const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
+      where: { gpuType },
+    });
+
+    let pricePerHourCents = 0;
+    if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
+      pricePerHourCents = warmPoolCfg.currentSpotPriceCents;
+
+      // Update lastRentalAt to track demand for spot pricing algorithm
+      await prisma.warmPoolConfig.update({
+        where: { id: warmPoolCfg.id },
+        data: { lastRentalAt: new Date() },
+      });
+    } else {
+      const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
+      if (!sku) {
+        console.error(`[BILLING] GpuSku not found for key "${gpuType}" — session will have $0 pricing`);
+      }
+      pricePerHourCents = sku?.pricePerHourCents || 0;
     }
-    const pricePerHourCents = sku?.pricePerHourCents || 0;
 
     try {
       await prisma.usageSession.create({

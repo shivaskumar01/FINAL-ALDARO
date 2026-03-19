@@ -37,6 +37,7 @@ import { volumeRoutes } from './routes/volumes';
 import { apiKeyRoutes } from './routes/api-keys';
 import { webhookRoutes } from './routes/webhooks';
 import { registryCredentialRoutes } from './routes/registry-credentials';
+import { spotPricingRoutes } from './routes/spot-pricing';
 import { z } from 'zod';
 
 // NOTE: Worker lifecycle management moved to standalone worker service.
@@ -487,6 +488,7 @@ fastify.register(volumeRoutes, { prefix: '/volumes' });
 fastify.register(apiKeyRoutes, { prefix: '/api-keys' });
 fastify.register(webhookRoutes, { prefix: '/webhooks' });
 fastify.register(registryCredentialRoutes, { prefix: '/registry-credentials' });
+fastify.register(spotPricingRoutes, { prefix: '/spot-pricing' });
 
 // V1 Control Plane routes
 fastify.register(projectRoutes, { prefix: '/v1/projects' });

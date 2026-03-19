@@ -775,11 +775,15 @@ model AuthorAudit {
 }
 
 model WarmPoolConfig {
-  id          String   @id @default(uuid())
-  region      String   @default("US")
-  gpuType     String
-  targetCount Int      @default(1)
-  createdAt   DateTime @default(now())
+  id                    String    @id @default(uuid())
+  region                String    @default("US")
+  gpuType               String
+  targetCount           Int       @default(1)
+  createdAt             DateTime  @default(now())
+  basePriceCents        Int       @default(55) // base price in cents/hr
+  currentSpotPriceCents Int       @default(55) // dynamic spot price
+  lastPriceUpdateAt     DateTime?
+  lastRentalAt          DateTime? // last time a warm workspace was rented from this pool
 
   @@unique([region, gpuType])
   @@map("warm_pool_config")
@@ -794,6 +798,8 @@ model GpuSku {
   shortBadge        String
   descriptionLines  String   @default("[]")
   enabled           Boolean  @default(true)
+  spotPriceCents    Int?     // current spot price (mirrors WarmPoolConfig)
+  spotMultiplier    Float    @default(1.0) // current multiplier (0.85 - 2.0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
