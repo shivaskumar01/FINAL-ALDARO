@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { getProxmoxProvider, ProxmoxFleetProvider } from '../providers/proxmoxFleet';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+import axios from 'axios';
 
 /**
  * Warm Pool Management
@@ -467,6 +469,77 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// AES-256-GCM decryption for registry credentials (mirrors API encryption)
+// ---------------------------------------------------------------------------
+function getEncryptionKey(): Buffer {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key || key.length < 32) {
+    throw new Error('ENCRYPTION_KEY must be at least 32 characters');
+  }
+  return crypto.createHash('sha256').update(key).digest();
+}
+
+function decryptToken(encryptedStr: string): string {
+  const key = getEncryptionKey();
+  const [ivB64, tagB64, dataB64] = encryptedStr.split(':');
+  if (!ivB64 || !tagB64 || !dataB64) {
+    throw new Error('Invalid encrypted token format');
+  }
+  const iv = Buffer.from(ivB64, 'base64');
+  const authTag = Buffer.from(tagB64, 'base64');
+  const data = Buffer.from(dataB64, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+  return decrypted.toString('utf8');
+}
+
+/**
+ * Send custom image startup command to workspace agent.
+ * Called when a workspace transitions to RUNNING_ASSIGNED and has a customImageRepo.
+ */
+async function sendCustomImageStartup(prisma: PrismaClient, ws: any): Promise<void> {
+  if (!ws.customImageRepo || !ws.vmInternalIp) return;
+
+  const fullImage = `${ws.customImageRepo}:${ws.customImageTag || 'latest'}`;
+  console.log(`[WarmPool] Sending custom image startup to workspace ${ws.id}: ${fullImage}`);
+
+  const startupPayload: any = {
+    custom_image: fullImage,
+    gpu_passthrough: true,
+  };
+
+  // If registry credential is set, decrypt and include auth details
+  if (ws.registryCredentialId) {
+    try {
+      const credential = await prisma.imageRegistryCredential.findUnique({
+        where: { id: ws.registryCredentialId },
+      });
+
+      if (credential) {
+        const decryptedToken = decryptToken(credential.encryptedToken);
+        startupPayload.registry_url = credential.registryUrl;
+        startupPayload.registry_username = credential.username || undefined;
+        startupPayload.registry_token = decryptedToken;
+      }
+    } catch (err) {
+      console.error(`[WarmPool] Failed to decrypt registry credential for workspace ${ws.id}:`, err);
+      // Continue without registry auth — the image may be public
+    }
+  }
+
+  try {
+    await axios.post(`http://${ws.vmInternalIp}:8844/startup`, startupPayload, {
+      timeout: 30000,
+    });
+    console.log(`[WarmPool] Custom image startup sent successfully for workspace ${ws.id}`);
+  } catch (err: any) {
+    console.error(`[WarmPool] Failed to send custom image startup to workspace ${ws.id}:`, err.message);
+    // Non-fatal: workspace is still usable, just without custom image
+  }
+}
+
 async function processWaitingWorkspaces(prisma: PrismaClient) {
   const proxmox = getProxmoxProvider();
 
@@ -525,6 +598,11 @@ async function processWaitingWorkspaces(prisma: PrismaClient) {
             data: updates,
           });
           console.log(`[WarmPool] Workspace ${ws.id} is now ${freshWs.isWarmPool ? 'WARM_AVAILABLE' : 'RUNNING_ASSIGNED'}`);
+
+          // If workspace has a custom image and just became RUNNING_ASSIGNED, send startup
+          if (!freshWs.isWarmPool && freshWs.customImageRepo) {
+            await sendCustomImageStartup(prisma, freshWs);
+          }
         }
       }
 

@@ -37,7 +37,7 @@ function generateSecureToken(length: number = 32): string {
 }
 
 export class WorkspaceService {
-  async launch(userId: string, gpuType: string, region: string, operationKey: string, requestHash: string, maxDurationMinutes?: number) {
+  async launch(userId: string, gpuType: string, region: string, operationKey: string, requestHash: string, maxDurationMinutes?: number, customImage?: string, registryCredentialId?: string) {
     const existing = await prisma.workspaceLaunchOperation.findUnique({
       where: { userId_operationKey: { userId, operationKey } },
       include: { workspace: true },
@@ -112,7 +112,7 @@ export class WorkspaceService {
     }
 
     try {
-      const workspace = await this.launchWorkspaceInternal(userId, gpuType, region, operationKey, maxDurationMinutes);
+      const workspace = await this.launchWorkspaceInternal(userId, gpuType, region, operationKey, maxDurationMinutes, customImage, registryCredentialId);
       await prisma.workspaceLaunchOperation.update({
         where: { userId_operationKey: { userId, operationKey } },
         data: {
@@ -156,7 +156,7 @@ export class WorkspaceService {
     return null;
   }
 
-  private async launchWorkspaceInternal(userId: string, gpuType: string, region: string, operationKey: string, maxDurationMinutes?: number) {
+  private async launchWorkspaceInternal(userId: string, gpuType: string, region: string, operationKey: string, maxDurationMinutes?: number, customImage?: string, registryCredentialId?: string) {
     // 1. Quota check
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error('USER_NOT_FOUND');
@@ -171,14 +171,29 @@ export class WorkspaceService {
       throw new Error('MAX_WORKSPACES_REACHED');
     }
 
+    // Parse custom image into repo and tag
+    let customImageRepo: string | undefined;
+    let customImageTag: string | undefined;
+    if (customImage) {
+      const colonIdx = customImage.lastIndexOf(':');
+      // Handle images like "repo/name:tag" but not "registry.io:5000/repo" (port-only colon)
+      if (colonIdx > 0 && !customImage.substring(colonIdx + 1).includes('/')) {
+        customImageRepo = customImage.substring(0, colonIdx);
+        customImageTag = customImage.substring(colonIdx + 1);
+      } else {
+        customImageRepo = customImage;
+        customImageTag = 'latest';
+      }
+    }
+
     // 2. Attempt warm assignment
     const warmWorkspace = await this.findWarmWorkspace(gpuType, region);
     if (warmWorkspace) {
-      return this.assignWarmWorkspace(warmWorkspace.id, userId, operationKey, maxDurationMinutes);
+      return this.assignWarmWorkspace(warmWorkspace.id, userId, operationKey, maxDurationMinutes, customImageRepo, customImageTag, registryCredentialId);
     }
 
     // 3. Cold launch
-    return this.createColdWorkspace(userId, gpuType, region, operationKey, maxDurationMinutes);
+    return this.createColdWorkspace(userId, gpuType, region, operationKey, maxDurationMinutes, customImageRepo, customImageTag, registryCredentialId);
   }
 
   private async findWarmWorkspace(gpuType: string, region: string) {
@@ -195,7 +210,7 @@ export class WorkspaceService {
     });
   }
 
-  private async assignWarmWorkspace(workspaceId: string, userId: string, operationKey: string, maxDurationMinutes?: number) {
+  private async assignWarmWorkspace(workspaceId: string, userId: string, operationKey: string, maxDurationMinutes?: number, customImageRepo?: string, customImageTag?: string, registryCredentialId?: string) {
     const workspace = await prisma.$transaction(async (tx) => {
       const ws = await tx.workspace.findUnique({
         where: { id: workspaceId },
@@ -212,6 +227,9 @@ export class WorkspaceService {
           status: 'ASSIGNING',
           launchOperationKey: operationKey,
           maxDurationMinutes: maxDurationMinutes ?? null,
+          customImageRepo: customImageRepo ?? null,
+          customImageTag: customImageTag ?? null,
+          registryCredentialId: registryCredentialId ?? null,
         },
       });
 
@@ -232,7 +250,7 @@ export class WorkspaceService {
     return workspace;
   }
 
-  private async createColdWorkspace(userId: string, gpuType: string, region: string, operationKey: string, maxDurationMinutes?: number) {
+  private async createColdWorkspace(userId: string, gpuType: string, region: string, operationKey: string, maxDurationMinutes?: number, customImageRepo?: string, customImageTag?: string, registryCredentialId?: string) {
     const workspace = await prisma.workspace.create({
       data: {
         assignedUserId: userId,
@@ -242,6 +260,9 @@ export class WorkspaceService {
         assignedAt: new Date(),
         launchOperationKey: operationKey,
         maxDurationMinutes: maxDurationMinutes ?? null,
+        customImageRepo: customImageRepo ?? null,
+        customImageTag: customImageTag ?? null,
+        registryCredentialId: registryCredentialId ?? null,
       },
     });
 

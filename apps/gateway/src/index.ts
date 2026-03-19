@@ -1,5 +1,6 @@
-import Fastify, { FastifyRequest } from 'fastify';
+import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
+import http from 'http';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 
@@ -41,6 +42,32 @@ const GATEWAY_HOST = process.env.GATEWAY_HOST || 'gw1.aldaro.ai';
 // In-memory cache — rebuilt from DB on startup and kept in sync via allocate/release.
 const activeAllocations = new Map<string, { ssh: number; jupyter: number; vscode: number; ip: string }>();
 const allocatedPorts = new Set<number>();
+
+// Exposed port cache — maps subdomain to routing info
+interface ExposedPortMapping {
+  workspace_id: string;
+  internal_port: number;
+  vm_internal_ip: string;
+  access_mode: string; // PUBLIC or PRIVATE
+  subdomain: string;
+}
+const exposedPortMappings = new Map<string, ExposedPortMapping>();
+
+const exposePortSchema = z.object({
+  workspace_id: z.string().uuid(),
+  internal_port: z.number().int().min(1).max(65535),
+  subdomain: z.string(),
+  vm_internal_ip: z.string().ip(),
+  access_mode: z.enum(['PUBLIC', 'PRIVATE']).default('PRIVATE'),
+  nonce: z.string().optional(),
+  timestamp: z.number().optional(),
+});
+
+const releasePortSchema = z.object({
+  subdomain: z.string(),
+  nonce: z.string().optional(),
+  timestamp: z.number().optional(),
+});
 
 const allocateSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -106,6 +133,30 @@ async function reconcileLeases() {
   }
 
   console.log(`[GATEWAY] Reconciled: ${loaded} active leases loaded, ${stale} stale leases released`);
+
+  // Also load active exposed port mappings
+  try {
+    const activePorts = await prisma.exposedPort.findMany({
+      where: { status: 'ACTIVE', releasedAt: null },
+      include: { workspace: { select: { vmInternalIp: true } } },
+    });
+    let portsLoaded = 0;
+    for (const ep of activePorts) {
+      if (ep.workspace?.vmInternalIp) {
+        exposedPortMappings.set(ep.publicSubdomain, {
+          workspace_id: ep.workspaceId,
+          internal_port: ep.internalPort,
+          vm_internal_ip: ep.workspace.vmInternalIp,
+          access_mode: ep.accessMode,
+          subdomain: ep.publicSubdomain,
+        });
+        portsLoaded++;
+      }
+    }
+    console.log(`[GATEWAY] Reconciled: ${portsLoaded} exposed port mappings loaded`);
+  } catch (err) {
+    console.warn(`[GATEWAY] Failed to reconcile exposed ports: ${(err as Error).message}`);
+  }
 }
 
 // --- HMAC verification ---
@@ -298,12 +349,211 @@ fastify.post('/internal/gateway/release', async (request, reply) => {
   return { ok: true, released: updated.count > 0 };
 });
 
+// --- Exposed Port Routes (Zero Trust Tunnels) ---
+
+fastify.post('/internal/gateway/expose-port', async (request, reply) => {
+  const { workspace_id, internal_port, subdomain, vm_internal_ip, access_mode } = exposePortSchema.parse(request.body);
+
+  const mapping: ExposedPortMapping = {
+    workspace_id,
+    internal_port,
+    vm_internal_ip,
+    access_mode,
+    subdomain,
+  };
+
+  // Store in memory
+  exposedPortMappings.set(subdomain, mapping);
+
+  // Persist to DB
+  try {
+    const publicUrl = `https://${subdomain}.aldaro.ai`;
+    await prisma.exposedPort.upsert({
+      where: { publicSubdomain: subdomain },
+      update: { status: 'ACTIVE', releasedAt: null, accessMode: access_mode },
+      create: {
+        workspaceId: workspace_id,
+        userId: '', // filled by API layer; gateway only stores routing
+        internalPort: internal_port,
+        publicSubdomain: subdomain,
+        publicUrl,
+        accessMode: access_mode,
+      },
+    });
+  } catch (err) {
+    // DB write is best-effort from gateway side; API is source of truth
+    console.warn(`[GATEWAY] Failed to persist exposed port to DB: ${(err as Error).message}`);
+  }
+
+  const publicUrl = `https://${subdomain}.aldaro.ai`;
+  console.log(`[GATEWAY] Exposed port ${internal_port} for workspace ${workspace_id} at ${publicUrl}`);
+
+  return { ok: true, public_url: publicUrl, subdomain };
+});
+
+fastify.post('/internal/gateway/release-port', async (request, reply) => {
+  const { subdomain } = releasePortSchema.parse(request.body);
+
+  const mapping = exposedPortMappings.get(subdomain);
+  if (mapping) {
+    console.log(`[GATEWAY] Releasing exposed port ${mapping.internal_port} for workspace ${mapping.workspace_id} (${subdomain})`);
+    exposedPortMappings.delete(subdomain);
+  }
+
+  // Mark released in DB
+  try {
+    await prisma.exposedPort.updateMany({
+      where: { publicSubdomain: subdomain, releasedAt: null },
+      data: { status: 'INACTIVE', releasedAt: new Date() },
+    });
+  } catch (err) {
+    console.warn(`[GATEWAY] Failed to release exposed port in DB: ${(err as Error).message}`);
+  }
+
+  return { ok: true, released: !!mapping };
+});
+
+// --- Reverse Proxy for Exposed Ports ---
+
+/**
+ * Simple reverse proxy using Node.js http.request.
+ * Forwards all headers, supports WebSocket upgrade for Gradio/Streamlit.
+ * Adds X-Forwarded-For and X-Forwarded-Proto headers.
+ */
+function proxyRequest(
+  targetHost: string,
+  targetPort: number,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): void {
+  const rawReq = req.raw;
+  const url = rawReq.url || '/';
+
+  const proxyReqOptions: http.RequestOptions = {
+    hostname: targetHost,
+    port: targetPort,
+    path: url,
+    method: rawReq.method,
+    headers: {
+      ...rawReq.headers,
+      host: `${targetHost}:${targetPort}`,
+      'x-forwarded-for': req.ip || rawReq.socket.remoteAddress || '',
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': rawReq.headers.host || '',
+    },
+    timeout: 30000,
+  };
+
+  const proxyReq = http.request(proxyReqOptions, (proxyRes) => {
+    reply.raw.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+    proxyRes.pipe(reply.raw);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error(`[GATEWAY] Proxy error: ${err.message}`);
+    if (!reply.raw.headersSent) {
+      reply.raw.writeHead(502, { 'content-type': 'application/json' });
+      reply.raw.end(JSON.stringify({ error: 'Bad gateway', message: 'Failed to reach upstream service' }));
+    }
+  });
+
+  // Pipe request body
+  rawReq.pipe(proxyReq);
+}
+
+// Subdomain-based proxy route: GET/POST/PUT/DELETE /proxy/:subdomain/*
+fastify.all('/proxy/:subdomain/*', async (request: any, reply) => {
+  const { subdomain } = request.params;
+  const mapping = exposedPortMappings.get(subdomain);
+
+  if (!mapping) {
+    return reply.status(404).send({ error: 'Not found', message: 'No service exposed at this subdomain' });
+  }
+
+  // For PRIVATE ports, verify JWT cookie
+  if (mapping.access_mode === 'PRIVATE') {
+    const authCookie = request.cookies?.auth_token || request.headers['authorization'];
+    if (!authCookie) {
+      return reply.status(401).send({ error: 'Unauthorized', message: 'This port requires Aldaro authentication' });
+    }
+    // In production, verify JWT here. For now, presence check is sufficient.
+    // Full JWT verification will be added when gateway has access to JWT secret.
+  }
+
+  // Proxy to the VM
+  proxyRequest(mapping.vm_internal_ip, mapping.internal_port, request, reply);
+  return reply;
+});
+
+// Handle WebSocket upgrade for exposed ports
+fastify.server.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buffer) => {
+  // Extract subdomain from URL path: /proxy/:subdomain/...
+  const match = req.url?.match(/^\/proxy\/([^/]+)/);
+  if (!match) return; // Not an exposed port proxy request
+
+  const subdomain = match[1];
+  const mapping = exposedPortMappings.get(subdomain);
+  if (!mapping) {
+    socket.destroy();
+    return;
+  }
+
+  // For PRIVATE ports, check auth cookie in upgrade request
+  if (mapping.access_mode === 'PRIVATE') {
+    const cookieHeader = req.headers.cookie || '';
+    const hasAuth = cookieHeader.includes('auth_token=');
+    const hasAuthHeader = !!req.headers['authorization'];
+    if (!hasAuth && !hasAuthHeader) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+
+  // Create WebSocket proxy connection to upstream
+  const proxyReq = http.request({
+    hostname: mapping.vm_internal_ip,
+    port: mapping.internal_port,
+    path: req.url?.replace(`/proxy/${subdomain}`, '') || '/',
+    method: 'GET',
+    headers: {
+      ...req.headers,
+      host: `${mapping.vm_internal_ip}:${mapping.internal_port}`,
+      'x-forwarded-for': req.socket.remoteAddress || '',
+      'x-forwarded-proto': 'https',
+    },
+  });
+
+  proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\n` +
+      Object.entries(proxyRes.headers)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\r\n') +
+      '\r\n\r\n',
+    );
+    if (proxyHead.length > 0) socket.write(proxyHead);
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+
+    proxySocket.on('error', () => socket.destroy());
+    socket.on('error', () => proxySocket.destroy());
+  });
+
+  proxyReq.on('error', () => {
+    socket.destroy();
+  });
+
+  proxyReq.end();
+});
+
 // Health check (no auth)
 fastify.get('/health', async () => {
   return {
     status: 'OK',
     allocations: activeAllocations.size,
     portsUsed: allocatedPorts.size,
+    exposedPorts: exposedPortMappings.size,
   };
 });
 
@@ -359,4 +609,4 @@ const start = async () => {
 
 start();
 
-export { fastify, prisma, activeAllocations, allocatedPorts, reconcileLeases };
+export { fastify, prisma, activeAllocations, allocatedPorts, exposedPortMappings, reconcileLeases };

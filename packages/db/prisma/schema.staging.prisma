@@ -60,6 +60,7 @@ model User {
   pricingSuggestionsApplied       PricingSuggestion[] @relation("PricingSuggestionAppliedBy")
   launchOperations                WorkspaceLaunchOperation[]
   workspaceMeterEvents            WorkspaceMeterEventOutbox[]
+  exposedPorts                    ExposedPort[]
 
   @@map("users")
 }
@@ -392,6 +393,7 @@ model Workspace {
   launchOperation       WorkspaceLaunchOperation? @relation("WorkspaceLaunchOperationWorkspace")
   cleanupJob            WorkspaceCleanupJob?      @relation("WorkspaceCleanupJobWorkspace")
   meterEvents           WorkspaceMeterEventOutbox[]
+  exposedPorts          ExposedPort[]
 
   @@index([status])
   @@index([status, updatedAt])
@@ -907,4 +909,29 @@ model DeployVersion {
 
   @@index([service, createdAt])
   @@map("deploy_versions")
+}
+
+// =============================================================================
+// Public Port Gateway: Exposed Ports (Zero Trust Tunnels)
+// =============================================================================
+model ExposedPort {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  userId          String
+  internalPort    Int       // e.g., 7860 for Gradio
+  publicSubdomain String    @unique // e.g., "ws-abc123-7860"
+  publicUrl       String    // e.g., "https://ws-abc123-7860.aldaro.ai"
+  accessMode      String    @default("PRIVATE") // PUBLIC or PRIVATE
+  protocol        String    @default("HTTP") // HTTP, TCP
+  status          String    @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt       DateTime  @default(now())
+  releasedAt      DateTime?
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, internalPort])
+  @@index([workspaceId])
+  @@index([publicSubdomain])
+  @@map("exposed_ports")
 }

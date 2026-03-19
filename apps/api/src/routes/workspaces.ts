@@ -14,6 +14,8 @@ const launchSchema = z.object({
   intent: z.string().optional(),
   idempotency_key: z.string().optional(),
   max_duration_minutes: z.number().int().min(15).max(43200).nullable().optional(),
+  custom_image: z.string().max(512).optional(),
+  registry_credential_id: z.string().uuid().optional(),
 }).refine((body) => !!(body.gpu_type || body.gpu_key), {
   message: 'gpu_type is required',
 });
@@ -32,7 +34,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
 
   fastify.post('/launch', async (request: any, reply) => {
     const userId = request.user.userId;
-    const { gpu_type, gpu_key, region, intent, idempotency_key, max_duration_minutes } = launchSchema.parse(request.body);
+    const { gpu_type, gpu_key, region, intent, idempotency_key, max_duration_minutes, custom_image, registry_credential_id } = launchSchema.parse(request.body);
     const normalizedGpuType = gpu_type || gpu_key!;
     if (!isSupportedCustomerGpu(normalizedGpuType)) {
       return reply.status(400).send({
@@ -66,6 +68,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         operationKey,
         requestHash,
         max_duration_minutes ?? undefined,
+        custom_image,
+        registry_credential_id,
       );
       return {
         workspace_id: launchResult.workspace.id,
@@ -143,5 +147,205 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       }
       throw err;
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Port Exposure — Zero Trust Tunnels
+  // ---------------------------------------------------------------------------
+
+  const exposePortSchema = z.object({
+    port: z.number().int().min(1).max(65535),
+    access_mode: z.enum(['PUBLIC', 'PRIVATE']).default('PRIVATE'),
+  });
+
+  const updatePortSchema = z.object({
+    access_mode: z.enum(['PUBLIC', 'PRIVATE']),
+  });
+
+  // POST /:id/ports — Expose a port
+  fastify.post('/:id/ports', async (request: any, reply: any) => {
+    const userId = request.user.userId;
+    const { id } = request.params;
+    const { port, access_mode } = exposePortSchema.parse(request.body);
+
+    // Validate workspace belongs to user and is RUNNING_ASSIGNED
+    const workspace = await prisma.workspace.findFirst({
+      where: { id, assignedUserId: userId },
+    });
+    if (!workspace) {
+      return reply.status(404).send({
+        errorCode: 'WORKSPACE_NOT_FOUND',
+        message: 'Workspace not found',
+        error: 'Workspace not found',
+        requestId: request.id,
+      });
+    }
+    if (workspace.status !== 'RUNNING_ASSIGNED') {
+      return reply.status(400).send({
+        errorCode: 'WORKSPACE_NOT_RUNNING',
+        message: 'Workspace must be running to expose ports',
+        error: 'Workspace must be running to expose ports',
+        requestId: request.id,
+      });
+    }
+
+    // Check if port is already exposed
+    const existing = await prisma.exposedPort.findUnique({
+      where: { workspaceId_internalPort: { workspaceId: id, internalPort: port } },
+    });
+    if (existing && existing.status === 'ACTIVE') {
+      return reply.status(409).send({
+        errorCode: 'PORT_ALREADY_EXPOSED',
+        message: `Port ${port} is already exposed`,
+        error: `Port ${port} is already exposed`,
+        requestId: request.id,
+      });
+    }
+
+    const subdomain = `ws-${workspace.id.slice(0, 8)}-${port}`;
+    const publicUrl = `https://${subdomain}.aldaro.ai`;
+
+    // If previously released, reactivate; otherwise create new
+    let exposedPort;
+    if (existing) {
+      exposedPort = await prisma.exposedPort.update({
+        where: { id: existing.id },
+        data: { accessMode: access_mode, status: 'ACTIVE', releasedAt: null, publicSubdomain: subdomain, publicUrl },
+      });
+    } else {
+      exposedPort = await prisma.exposedPort.create({
+        data: {
+          workspaceId: id,
+          userId,
+          internalPort: port,
+          publicSubdomain: subdomain,
+          publicUrl,
+          accessMode: access_mode,
+        },
+      });
+    }
+
+    return {
+      id: exposedPort.id,
+      public_url: exposedPort.publicUrl,
+      subdomain: exposedPort.publicSubdomain,
+      port: exposedPort.internalPort,
+      access_mode: exposedPort.accessMode,
+    };
+  });
+
+  // GET /:id/ports — List exposed ports for workspace
+  fastify.get('/:id/ports', async (request: any, reply: any) => {
+    const userId = request.user.userId;
+    const { id } = request.params;
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id, assignedUserId: userId },
+    });
+    if (!workspace) {
+      return reply.status(404).send({
+        errorCode: 'WORKSPACE_NOT_FOUND',
+        message: 'Workspace not found',
+        error: 'Workspace not found',
+        requestId: request.id,
+      });
+    }
+
+    const ports = await prisma.exposedPort.findMany({
+      where: { workspaceId: id, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return ports.map((p: any) => ({
+      id: p.id,
+      port: p.internalPort,
+      public_url: p.publicUrl,
+      subdomain: p.publicSubdomain,
+      access_mode: p.accessMode,
+      protocol: p.protocol,
+      status: p.status,
+      created_at: p.createdAt,
+    }));
+  });
+
+  // DELETE /:id/ports/:portId — Release exposed port
+  fastify.delete('/:id/ports/:portId', async (request: any, reply: any) => {
+    const userId = request.user.userId;
+    const { id, portId } = request.params;
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id, assignedUserId: userId },
+    });
+    if (!workspace) {
+      return reply.status(404).send({
+        errorCode: 'WORKSPACE_NOT_FOUND',
+        message: 'Workspace not found',
+        error: 'Workspace not found',
+        requestId: request.id,
+      });
+    }
+
+    const port = await prisma.exposedPort.findFirst({
+      where: { id: portId, workspaceId: id },
+    });
+    if (!port) {
+      return reply.status(404).send({
+        errorCode: 'PORT_NOT_FOUND',
+        message: 'Exposed port not found',
+        error: 'Exposed port not found',
+        requestId: request.id,
+      });
+    }
+
+    await prisma.exposedPort.update({
+      where: { id: portId },
+      data: { status: 'INACTIVE', releasedAt: new Date() },
+    });
+
+    return { ok: true };
+  });
+
+  // PUT /:id/ports/:portId — Update access mode
+  fastify.put('/:id/ports/:portId', async (request: any, reply: any) => {
+    const userId = request.user.userId;
+    const { id, portId } = request.params;
+    const { access_mode } = updatePortSchema.parse(request.body);
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id, assignedUserId: userId },
+    });
+    if (!workspace) {
+      return reply.status(404).send({
+        errorCode: 'WORKSPACE_NOT_FOUND',
+        message: 'Workspace not found',
+        error: 'Workspace not found',
+        requestId: request.id,
+      });
+    }
+
+    const port = await prisma.exposedPort.findFirst({
+      where: { id: portId, workspaceId: id, status: 'ACTIVE' },
+    });
+    if (!port) {
+      return reply.status(404).send({
+        errorCode: 'PORT_NOT_FOUND',
+        message: 'Exposed port not found',
+        error: 'Exposed port not found',
+        requestId: request.id,
+      });
+    }
+
+    const updated = await prisma.exposedPort.update({
+      where: { id: portId },
+      data: { accessMode: access_mode },
+    });
+
+    return {
+      id: updated.id,
+      port: updated.internalPort,
+      public_url: updated.publicUrl,
+      subdomain: updated.publicSubdomain,
+      access_mode: updated.accessMode,
+    };
   });
 };

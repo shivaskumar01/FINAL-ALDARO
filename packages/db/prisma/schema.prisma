@@ -73,6 +73,12 @@ model User {
   // Persistent Volumes
   persistentVolumes     PersistentVolume[]
 
+  // Custom Docker Image Registry Credentials
+  imageRegistryCredentials ImageRegistryCredential[]
+
+  // Exposed Ports
+  exposedPorts              ExposedPort[]
+
   @@map("users")
 }
 
@@ -392,6 +398,13 @@ model Workspace {
   maxDurationMinutes      Int? // Auto-terminate after N minutes (null = unlimited)
   terminationReason       String? // idle, manual, failed, billing, budget_limit
   launchOperationKey      String?
+
+  // Custom Docker image support
+  customImageRepo       String?
+  customImageTag        String?   @default("latest")
+  registryCredentialId  String?
+  registryCredential    ImageRegistryCredential? @relation(fields: [registryCredentialId], references: [id])
+
   cleanupAttemptCount     Int       @default(0)
   cleanupLastAttemptAt    DateTime?
   cleanupNextRetryAt      DateTime?
@@ -410,6 +423,7 @@ model Workspace {
   cleanupJob       WorkspaceCleanupJob?        @relation("WorkspaceCleanupJobWorkspace")
   meterEvents      WorkspaceMeterEventOutbox[]
   attachedVolume   PersistentVolume?
+  exposedPorts     ExposedPort[]
 
   @@index([status])
   @@index([status, updatedAt])
@@ -1083,4 +1097,52 @@ model PersistentVolume {
   @@index([userId])
   @@index([status])
   @@map("persistent_volumes")
+}
+
+// =============================================================================
+// Custom Docker Images & Private Registries
+// =============================================================================
+model ImageRegistryCredential {
+  id              String    @id @default(uuid())
+  userId          String
+  name            String    @default("Default Registry")
+  registryUrl     String    // e.g., "https://index.docker.io/v1/", "123456789.dkr.ecr.us-east-1.amazonaws.com"
+  registryType    String    @default("DOCKER_HUB") // DOCKER_HUB, AWS_ECR, GCP_GCR, GITHUB_GHCR, CUSTOM
+  username        String?
+  encryptedToken  String    // encrypted at rest
+  verified        Boolean   @default(false)
+  lastVerifiedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+  workspaces      Workspace[]
+
+  @@index([userId])
+  @@map("image_registry_credentials")
+}
+
+// =============================================================================
+// Public Port Gateway: Exposed Ports (Zero Trust Tunnels)
+// =============================================================================
+model ExposedPort {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  userId          String
+  internalPort    Int       // e.g., 7860 for Gradio
+  publicSubdomain String    @unique // e.g., "ws-abc123-7860"
+  publicUrl       String    // e.g., "https://ws-abc123-7860.aldaro.ai"
+  accessMode      String    @default("PRIVATE") // PUBLIC or PRIVATE
+  protocol        String    @default("HTTP") // HTTP, TCP
+  status          String    @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt       DateTime  @default(now())
+  releasedAt      DateTime?
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, internalPort])
+  @@index([workspaceId])
+  @@index([publicSubdomain])
+  @@map("exposed_ports")
 }
