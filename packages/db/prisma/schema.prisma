@@ -66,6 +66,13 @@ model User {
   orgMembershipsInvited OrgMembership[] @relation("OrgMembershipInvitedBy")
   orgInvitationsSent    OrgInvitation[] @relation("OrgInvitationInvitedBy")
 
+  // Developer API
+  apiKeys               ApiKey[]
+  webhookEndpoints      WebhookEndpoint[]
+
+  // Persistent Volumes
+  persistentVolumes     PersistentVolume[]
+
   @@map("users")
 }
 
@@ -402,6 +409,7 @@ model Workspace {
   launchOperation  WorkspaceLaunchOperation?   @relation("WorkspaceLaunchOperationWorkspace")
   cleanupJob       WorkspaceCleanupJob?        @relation("WorkspaceCleanupJobWorkspace")
   meterEvents      WorkspaceMeterEventOutbox[]
+  attachedVolume   PersistentVolume?
 
   @@index([status])
   @@index([status, updatedAt])
@@ -982,4 +990,97 @@ model OrgInvitation {
 
   @@unique([orgId, email])
   @@map("org_invitations")
+}
+
+// =============================================================================
+// Public Developer API: API Keys & Webhooks
+// =============================================================================
+
+model ApiKey {
+  id              String    @id @default(uuid())
+  userId          String
+  organizationId  String?
+  name            String    @default("Default")
+  keyPrefix       String    // first 8 chars of key for identification (e.g. "ak_live_")
+  keyHash         String    @unique // SHA-256 hash of the full key
+  scopes          String    @default("*") // comma-separated scopes
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  revoked         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@index([keyHash])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id              String    @id @default(uuid())
+  userId          String
+  organizationId  String?
+  url             String
+  secret          String    // HMAC signing secret
+  events          String    // JSON array of event types like ["run.completed","workspace.failed"]
+  enabled         Boolean   @default(true)
+  failureCount    Int       @default(0)
+  lastDeliveredAt DateTime?
+  lastFailedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+  deliveries      WebhookDelivery[]
+
+  @@index([userId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id              String    @id @default(uuid())
+  endpointId      String
+  event           String    // e.g. "run.completed"
+  payload         String    // JSON payload
+  responseStatus  Int?
+  responseBody    String?
+  attemptCount    Int       @default(1)
+  deliveredAt     DateTime?
+  nextRetryAt     DateTime?
+  status          String    @default("PENDING") // PENDING, DELIVERED, FAILED
+  createdAt       DateTime  @default(now())
+
+  endpoint        WebhookEndpoint @relation(fields: [endpointId], references: [id])
+
+  @@index([endpointId])
+  @@index([status])
+  @@map("webhook_deliveries")
+}
+
+// =============================================================================
+// Persistent Network Volumes
+// =============================================================================
+model PersistentVolume {
+  id                    String    @id @default(uuid())
+  userId                String
+  organizationId        String?
+  name                  String
+  sizeGb                Int
+  status                String    @default("CREATING") // CREATING, AVAILABLE, IN_USE, DELETING, DELETED, FAILED
+  proxmoxNode           String?
+  proxmoxDiskId         String?   // e.g., "vm-9001-disk-0"
+  proxmoxStoragePool    String?   @default("local-lvm")
+  attachedToWorkspaceId String?   @unique
+  lastAttachedAt        DateTime?
+  lastDetachedAt        DateTime?
+  usedBytes             BigInt    @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id])
+  attachedWorkspace     Workspace? @relation(fields: [attachedToWorkspaceId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("persistent_volumes")
 }

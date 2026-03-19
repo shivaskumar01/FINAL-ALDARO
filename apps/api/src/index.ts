@@ -33,6 +33,9 @@ import { runRoutes } from './routes/v1/runs';
 import { agentRoutes } from './routes/v1/agent';
 import { githubRoutes } from './routes/v1/integrations/github';
 import { organizationRoutes } from './routes/organizations';
+import { volumeRoutes } from './routes/volumes';
+import { apiKeyRoutes } from './routes/api-keys';
+import { webhookRoutes } from './routes/webhooks';
 import { z } from 'zod';
 
 // NOTE: Worker lifecycle management moved to standalone worker service.
@@ -479,6 +482,9 @@ fastify.register(recommendRoutes, { prefix: '/api/recommend' });
 fastify.register(publicContentRoutes, { prefix: '/api/content' });
 fastify.register(opsFleetRoutes, { prefix: '/api/ops/fleet' });
 fastify.register(organizationRoutes, { prefix: '/organizations' });
+fastify.register(volumeRoutes, { prefix: '/volumes' });
+fastify.register(apiKeyRoutes, { prefix: '/api-keys' });
+fastify.register(webhookRoutes, { prefix: '/webhooks' });
 
 // V1 Control Plane routes
 fastify.register(projectRoutes, { prefix: '/v1/projects' });

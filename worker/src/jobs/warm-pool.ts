@@ -205,13 +205,23 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
     });
     console.log(`[WarmPool] GPU attached for workspace ${workspaceId}`);
 
-    // 7. Set cloud-init (agent bootstrap)
+    // 7. Attach persistent volume if workspace has one
+    const attachedVolume = await prisma.persistentVolume.findFirst({
+      where: { attachedToWorkspaceId: workspaceId },
+    });
+    if (attachedVolume) {
+      const scsiDisk = `${attachedVolume.proxmoxStoragePool || 'local-lvm'}:${attachedVolume.proxmoxDiskId}`;
+      await proxmox.updateVmConfig(gpu.node.name, newVmid, { scsi1: scsiDisk });
+      console.log(`[WarmPool] Attached volume ${attachedVolume.id} to workspace ${workspaceId}`);
+    }
+
+    // 8. Set cloud-init (agent bootstrap)
     await proxmox.setCloudInit(gpu.node.name, newVmid, {
       ciuser: 'aldaro',
       ipconfig0: 'ip=dhcp',
     });
 
-    // 8. Start VM
+    // 9. Start VM
     console.log(`[WarmPool] Starting VM ${newVmid}`);
     await proxmox.startVm(gpu.node.name, newVmid);
     
@@ -394,6 +404,16 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
       where: { id: ws.id },
       data: { gpuAttachedAt: new Date() },
     });
+
+    // Attach persistent volume if workspace has one
+    const attachedVolume = await prisma.persistentVolume.findFirst({
+      where: { attachedToWorkspaceId: ws.id },
+    });
+    if (attachedVolume) {
+      const scsiDisk = `${attachedVolume.proxmoxStoragePool || 'local-lvm'}:${attachedVolume.proxmoxDiskId}`;
+      await proxmox.updateVmConfig(gpu.node.name, newVmid, { scsi1: scsiDisk });
+      console.log(`[WarmPool] Attached volume ${attachedVolume.id} to workspace ${ws.id}`);
+    }
 
     // Cloud-init
     await proxmox.setCloudInit(gpu.node.name, newVmid, {
