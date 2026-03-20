@@ -16,16 +16,47 @@ const VALID_WEBHOOK_EVENTS = [
   'workspace.failed',
   'workspace.terminated',
   'billing.usage_recorded',
+  'budget.warning',
 ] as const;
+
+type WebhookEvent = typeof VALID_WEBHOOK_EVENTS[number];
+
+/**
+ * SECURITY: Block webhook URLs targeting internal/private IP ranges (SSRF protection).
+ */
+function isBlockedWebhookUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    const hostname = url.hostname.toLowerCase();
+    // Block loopback
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') return true;
+    // Block private IPv4 ranges
+    if (/^10\./.test(hostname)) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) return true;
+    if (/^192\.168\./.test(hostname)) return true;
+    // Block link-local / AWS metadata
+    if (/^169\.254\./.test(hostname)) return true;
+    // Block internal Aldaro domains
+    if (hostname.endsWith('.internal') || hostname.endsWith('.local')) return true;
+    return false;
+  } catch {
+    return true; // Invalid URL = blocked
+  }
+}
+
+const webhookEventSchema = z.string().refine(
+  (val): val is WebhookEvent => (VALID_WEBHOOK_EVENTS as readonly string[]).includes(val),
+  { message: 'Invalid webhook event type' },
+);
 
 const createWebhookSchema = z.object({
   url: z.string().url().max(2048),
-  events: z.array(z.string().min(1).max(100)).min(1).max(50),
+  events: z.array(webhookEventSchema).min(1).max(50),
 });
 
 const updateWebhookSchema = z.object({
   url: z.string().url().max(2048).optional(),
-  events: z.array(z.string().min(1).max(100)).min(1).max(50).optional(),
+  events: z.array(webhookEventSchema).min(1).max(50).optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -39,6 +70,16 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
     const body = createWebhookSchema.parse(request.body);
+
+    // SECURITY: Block SSRF — reject internal/private webhook URLs
+    if (isBlockedWebhookUrl(body.url)) {
+      return reply.status(400).send({
+        errorCode: 'INVALID_WEBHOOK_URL',
+        message: 'Webhook URL must not target internal or private IP addresses.',
+        error: 'Webhook URL must not target internal or private IP addresses.',
+        requestId: request.id,
+      });
+    }
 
     // Auto-generate HMAC signing secret
     const secret = `whsec_${crypto.randomBytes(32).toString('base64url')}`;
@@ -100,6 +141,16 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     const userId = request.user.userId;
     const { id } = request.params;
     const body = updateWebhookSchema.parse(request.body);
+
+    // SECURITY: Block SSRF on URL updates
+    if (body.url && isBlockedWebhookUrl(body.url)) {
+      return reply.status(400).send({
+        errorCode: 'INVALID_WEBHOOK_URL',
+        message: 'Webhook URL must not target internal or private IP addresses.',
+        error: 'Webhook URL must not target internal or private IP addresses.',
+        requestId: request.id,
+      });
+    }
 
     const existing = await prisma.webhookEndpoint.findFirst({
       where: { id, userId },

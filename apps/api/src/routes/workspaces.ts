@@ -32,7 +32,15 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     });
   });
 
-  fastify.post('/launch', async (request: any, reply) => {
+  fastify.post('/launch', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+        keyGenerator: (request: any) => request.user?.userId || request.ip,
+      },
+    },
+  }, async (request: any, reply) => {
     const userId = request.user.userId;
     const { gpu_type, gpu_key, region, intent, idempotency_key, max_duration_minutes, custom_image, registry_credential_id } = launchSchema.parse(request.body);
     const normalizedGpuType = gpu_type || gpu_key!;

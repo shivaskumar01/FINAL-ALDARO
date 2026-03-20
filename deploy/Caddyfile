@@ -1,0 +1,102 @@
+# Aldaro Edge Gateway — Caddy TLS Termination
+#
+# Caddy automatically provisions and renews wildcard SSL certificates
+# for *.aldaro.ai via Let's Encrypt (ACME DNS-01 challenge).
+#
+# Requirements:
+#   - DNS provider API credentials for DNS-01 challenge (wildcard certs
+#     cannot use HTTP-01). Set via environment variables below.
+#   - Caddy compiled with the DNS provider plugin (e.g. caddy-dns/cloudflare).
+#     Build: xcaddy build --with github.com/caddy-dns/cloudflare
+#   - GATEWAY_UPSTREAM: address of the Node.js gateway (default localhost:5001)
+#
+# Usage:
+#   CLOUDFLARE_API_TOKEN=xxx caddy run --config deploy/Caddyfile
+#
+# Architecture:
+#   Internet -> Caddy (:443, TLS) -> Node.js Gateway (:5001, HTTP)
+
+# Global options
+{
+	# Email for Let's Encrypt account registration
+	email {$ACME_EMAIL:ops@aldaro.ai}
+
+	# Use Let's Encrypt production by default (set to
+	# https://acme-staging-v02.api.letsencrypt.org/directory for testing)
+	acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}
+
+# ---------------------------------------------------------------------------
+# Wildcard cert for all workspace subdomains: ws-*.aldaro.ai
+# DNS-01 challenge is required for wildcard certificates.
+# ---------------------------------------------------------------------------
+*.aldaro.ai {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	# Extract subdomain from Host header
+	@workspace_subdomain {
+		header_regexp subdomain Host ^([a-z0-9-]+)\.aldaro\.ai$
+	}
+
+	# Proxy to the Node.js gateway's exposed-port proxy endpoint
+	handle @workspace_subdomain {
+		reverse_proxy {$GATEWAY_UPSTREAM:localhost:5001} {
+			# Rewrite the path to the gateway's internal proxy route
+			# e.g. ws-abc123-7860.aldaro.ai/foo -> /proxy/ws-abc123-7860/foo
+			rewrite * /proxy/{re.subdomain.1}{uri}
+
+			# WebSocket support
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {host}
+			header_up X-Real-IP {remote_host}
+
+			# Flush immediately for streaming/SSE (Gradio, Streamlit)
+			flush_interval -1
+
+			# Timeouts for long-running ML workloads
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 0
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	# Fallback: no matching subdomain route
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Main app domain — proxy to Next.js web app
+# ---------------------------------------------------------------------------
+app.aldaro.ai {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	reverse_proxy {$WEB_UPSTREAM:localhost:3000}
+}
+
+# ---------------------------------------------------------------------------
+# API domain — proxy to Fastify API server
+# ---------------------------------------------------------------------------
+api.aldaro.ai {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	reverse_proxy {$API_UPSTREAM:localhost:4000}
+}
+
+# ---------------------------------------------------------------------------
+# Health endpoint for load balancer probes (no TLS)
+# ---------------------------------------------------------------------------
+:8080 {
+	respond /health "OK" 200
+}

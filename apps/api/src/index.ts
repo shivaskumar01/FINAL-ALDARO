@@ -38,6 +38,9 @@ import { apiKeyRoutes } from './routes/api-keys';
 import { webhookRoutes } from './routes/webhooks';
 import { registryCredentialRoutes } from './routes/registry-credentials';
 import { spotPricingRoutes } from './routes/spot-pricing';
+import { supportRoutes } from './routes/support';
+import { opsTicketRoutes } from './routes/ops/tickets';
+import { budgetRoutes } from './routes/budget';
 import { z } from 'zod';
 
 // NOTE: Worker lifecycle management moved to standalone worker service.
@@ -57,6 +60,8 @@ if (isProduction) {
     'JWT_ACCESS_SECRET',
     'JWT_REFRESH_SECRET',
     'ALDARO_AGENT_SHARED_SECRET',
+    'GATEWAY_SERVICE_SECRET',
+    'ENCRYPTION_KEY',
     'DATABASE_URL',
   ];
   
@@ -95,8 +100,10 @@ function getAllowedBrowserOrigins() {
   return allowed;
 }
 
-function isAllowedBrowserOrigin(origin: string | undefined) {
-  if (!origin) return true;
+function isAllowedBrowserOrigin(origin: string | undefined, isCookieAuth: boolean) {
+  // SECURITY: Missing origin on cookie-authenticated mutations = CSRF attempt.
+  // Non-browser clients (API keys via Bearer header) don't send Origin, so allow those.
+  if (!origin) return !isCookieAuth;
   return getAllowedBrowserOrigins().has(origin);
 }
 
@@ -270,7 +277,8 @@ fastify.decorate('authenticate', async (request: any, reply: any) => {
 
     if (MUTATION_METHODS.has(request.method)) {
       const origin = request.headers.origin as string | undefined;
-      if (!isAllowedBrowserOrigin(origin)) {
+      const isCookieAuth = !!request.cookies[SESSION_COOKIE_NAME];
+      if (!isAllowedBrowserOrigin(origin, isCookieAuth)) {
         return reply.status(403).send({
           errorCode: 'FORBIDDEN_ORIGIN',
           message: 'Forbidden origin',
@@ -489,6 +497,9 @@ fastify.register(apiKeyRoutes, { prefix: '/api-keys' });
 fastify.register(webhookRoutes, { prefix: '/webhooks' });
 fastify.register(registryCredentialRoutes, { prefix: '/registry-credentials' });
 fastify.register(spotPricingRoutes, { prefix: '/spot-pricing' });
+fastify.register(supportRoutes, { prefix: '/support' });
+fastify.register(opsTicketRoutes, { prefix: '/api/ops/tickets' });
+fastify.register(budgetRoutes, { prefix: '/budget' });
 
 // V1 Control Plane routes
 fastify.register(projectRoutes, { prefix: '/v1/projects' });

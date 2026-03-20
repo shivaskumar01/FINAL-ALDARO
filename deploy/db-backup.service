@@ -1,0 +1,12 @@
+[Unit]
+Description=Aldaro PostgreSQL Database Backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/aldaro/backup.env
+ExecStart=/opt/aldaro/scripts/db-backup.sh
+StandardOutput=append:/var/log/aldaro-backup.log
+StandardError=append:/var/log/aldaro-backup.log
+TimeoutStartSec=600

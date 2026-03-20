@@ -79,6 +79,15 @@ model User {
   // Exposed Ports
   exposedPorts              ExposedPort[]
 
+  // Support Tickets
+  supportTickets            SupportTicket[]
+  ticketMessages            TicketMessage[]
+
+  // Budget Alerts
+  monthlySoftLimitCents     Int?      // monthly soft budget limit in cents
+  hardLimitAction           String    @default("ALERT") // ALERT | AUTO_TERMINATE
+  lastBudgetAlertAt         DateTime?
+
   @@map("users")
 }
 
@@ -404,6 +413,16 @@ model Workspace {
   customImageTag        String?   @default("latest")
   registryCredentialId  String?
   registryCredential    ImageRegistryCredential? @relation(fields: [registryCredentialId], references: [id])
+
+  // Spot price locked at launch time (for cold workspaces billed at checkout price)
+  lockedSpotPriceCents    Int?
+
+  // Network isolation: VLAN tag derived from org/user for tenant separation
+  vlanTag                 Int?
+  // S3 object storage: per-workspace MinIO bucket credentials
+  s3BucketName            String?
+  s3AccessKeyId           String?
+  s3SecretAccessKeyEnc    String?   // AES-256-GCM encrypted
 
   cleanupAttemptCount     Int       @default(0)
   cleanupLastAttemptAt    DateTime?
@@ -962,6 +981,9 @@ model Organization {
   maxMembers                   Int      @default(5)
   maxActiveWorkspaces          Int      @default(5)
   maxConcurrentRuns            Int      @default(10)
+  monthlySoftLimitCents        Int?
+  hardLimitAction              String   @default("ALERT") // ALERT | AUTO_TERMINATE
+  lastBudgetAlertAt            DateTime?
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
@@ -1151,4 +1173,109 @@ model ExposedPort {
   @@index([workspaceId])
   @@index([publicSubdomain])
   @@map("exposed_ports")
+}
+
+// =============================================================================
+// Support Ticketing & Refunds
+// =============================================================================
+model SupportTicket {
+  id              String    @id @default(uuid())
+  userId          String
+  workspaceId     String?
+  usageSessionId  String?
+  subject         String
+  description     String
+  status          String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED
+  priority        String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  category        String?   // gpu_crash, billing, network, general
+  assignedToId    String?
+  refundedCents   Int?      // amount refunded via Stripe
+  refundedAt      DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+  messages        TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([status, createdAt])
+  @@index([assignedToId])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id              String    @id @default(uuid())
+  ticketId        String
+  authorId        String
+  body            String
+  isInternal      Boolean   @default(false) // internal notes visible only to ops
+  createdAt       DateTime  @default(now())
+
+  ticket          SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author          User          @relation(fields: [authorId], references: [id])
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// =============================================================================
+// Budget Alerts
+// =============================================================================
+model BudgetAlert {
+  id              String    @id @default(uuid())
+  userId          String
+  mtdSpendCents   Int       // month-to-date spend at alert time
+  limitCents      Int       // the limit that was breached
+  thresholdPct    Int       // 90, 100, etc.
+  action          String    // ALERT | AUTO_TERMINATE
+  notifiedAt      DateTime  @default(now())
+  workspacesTerminated Int  @default(0) // count of auto-terminated workspaces
+
+  @@index([userId])
+  @@index([notifiedAt])
+  @@map("budget_alerts")
+}
+
+// =============================================================================
+// Hybrid Cloud Burst Nodes
+// =============================================================================
+model BurstNode {
+  id                String    @id @default(uuid())
+  provider          String    // LAMBDA, HETZNER, RUNPOD
+  providerInstanceId String?  @unique // provider's instance/server ID
+  region            String    @default("US")
+  gpuType           String
+  gpuCount          Int       @default(1)
+  status            String    @default("PROVISIONING") // PROVISIONING | JOINING | ACTIVE | DRAINING | TERMINATED | FAILED
+  proxmoxNodeName   String?   // name once joined to cluster
+  hourlyRateCents   Int       @default(0)
+  triggerReason     String?   // warm_pool_exhausted, demand_surge
+  provisionedAt     DateTime  @default(now())
+  joinedAt          DateTime?
+  drainingAt        DateTime?
+  terminatedAt      DateTime?
+  lastErrorCode     String?
+  lastErrorMessage  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([provider, status])
+  @@map("burst_nodes")
+}
+
+// =============================================================================
+// Clone Semaphore: track in-flight clones per Proxmox node
+// =============================================================================
+model CloneSemaphore {
+  id            String    @id @default(uuid())
+  proxmoxNode   String
+  workspaceId   String    @unique
+  acquiredAt    DateTime  @default(now())
+  releasedAt    DateTime?
+
+  @@index([proxmoxNode, releasedAt])
+  @@map("clone_semaphores")
 }

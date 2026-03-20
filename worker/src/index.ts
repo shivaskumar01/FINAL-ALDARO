@@ -9,6 +9,8 @@ import { processWorkspaceMeterEvents } from './jobs/workspace-metering';
 import { runExecutorTick } from './jobs/run-executor';
 import { volumeManagerTick } from './jobs/volume-manager';
 import { updateSpotPrices } from './jobs/spot-pricing';
+import { budgetMonitorTick } from './jobs/budget-monitor';
+import { burstOrchestratorTick } from './jobs/burst-orchestrator';
 import { getProxmoxProvider } from './providers/proxmoxFleet';
 import crypto from 'crypto';
 
@@ -40,6 +42,8 @@ const WORKSPACE_METERING_TICK_MS = 15 * 1000;
 const RUN_EXECUTOR_TICK_MS = 5 * 1000;
 const VOLUME_MANAGER_TICK_MS = 15 * 1000;
 const SPOT_PRICING_TICK_MS = 5 * 60 * 1000; // 5 minutes
+const BUDGET_MONITOR_TICK_MS = 15 * 60 * 1000; // 15 minutes
+const BURST_ORCHESTRATOR_TICK_MS = 2 * 60 * 1000; // 2 minutes
 const FLEET_AGG_TODAY_REFRESH_MS = 60 * 60 * 1000; // hourly
 const RETENTION_TICK_MS = 60 * 60 * 1000; // 1 hour (runs once when conditions met)
 const LEADER_LOCK_ID = 1001; // Postgres advisory lock ID for worker leader
@@ -66,6 +70,7 @@ async function main() {
     'PROXMOX_API_TOKEN_ID',
     'PROXMOX_API_TOKEN_SECRET',
     'ALDARO_AGENT_SHARED_SECRET',
+    'ENCRYPTION_KEY',
   ];
 
   const missing = requiredEnv.filter(k => !process.env[k]);
@@ -199,6 +204,8 @@ let lastWorkspaceMeteringTick = 0;
 let lastRunExecutorTick = 0;
 let lastVolumeManagerTick = 0;
 let lastSpotPricingTick = 0;
+let lastBudgetMonitorTick = 0;
+let lastBurstOrchestratorTick = 0;
 let lastFleetAggTick = 0;
 let lastFleetAggDate: string | null = null; // Run backfill once per day
 
@@ -301,6 +308,26 @@ async function leaderTick() {
       await updateSpotPrices(prisma);
     } catch (err) {
       console.error('Error in updateSpotPrices:', err);
+    }
+  }
+
+  // Budget Monitor Tick (check MTD spend vs limits, alert or auto-terminate)
+  if (now - lastBudgetMonitorTick >= BUDGET_MONITOR_TICK_MS) {
+    lastBudgetMonitorTick = now;
+    try {
+      await budgetMonitorTick(prisma);
+    } catch (err) {
+      console.error('Error in budgetMonitorTick:', err);
+    }
+  }
+
+  // Burst Orchestrator Tick (provision/drain external GPU nodes based on demand)
+  if (now - lastBurstOrchestratorTick >= BURST_ORCHESTRATOR_TICK_MS) {
+    lastBurstOrchestratorTick = now;
+    try {
+      await burstOrchestratorTick(prisma);
+    } catch (err) {
+      console.error('Error in burstOrchestratorTick:', err);
     }
   }
 

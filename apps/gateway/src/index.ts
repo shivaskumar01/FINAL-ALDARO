@@ -1,6 +1,8 @@
 import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
 import http from 'http';
+import https from 'https';
+import fs from 'fs';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 
@@ -25,15 +27,108 @@ import { PrismaClient } from '@prisma/client';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+// ---------------------------------------------------------------------------
+// JWT verification for PRIVATE exposed ports.
+// Uses the same JWT_ACCESS_SECRET as the API server.
+// ---------------------------------------------------------------------------
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || '';
+
+function verifyJwt(token: string): { valid: boolean; payload?: any } {
+  if (!JWT_SECRET) {
+    if (isProduction) return { valid: false };
+    // In dev without a secret, allow (same pattern as other dev bypasses)
+    return { valid: true };
+  }
+  try {
+    const parts = token.replace('Bearer ', '').split('.');
+    if (parts.length !== 3) return { valid: false };
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const expected = crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(`${headerB64}.${payloadB64}`)
+      .digest('base64url');
+    if (expected !== signatureB64) return { valid: false };
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    // Check expiry
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return { valid: false };
+    }
+    return { valid: true, payload };
+  } catch {
+    return { valid: false };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSRF Protection — block proxying to internal services
+// ---------------------------------------------------------------------------
+const ALLOWED_VM_SUBNET = process.env.VM_SUBNET || '10.10.'; // Workspace VMs live here
+const BLOCKED_PORTS = new Set([22, 5432, 6379, 9000, 2379, 2380]); // SSH, Postgres, Redis, MinIO admin, etcd
+
+function isAllowedProxyTarget(ip: string, port: number): boolean {
+  // Block loopback
+  if (ip === '127.0.0.1' || ip === 'localhost' || ip === '::1' || ip === '0.0.0.0') return false;
+  // Block link-local / metadata (AWS 169.254.169.254)
+  if (ip.startsWith('169.254.')) return false;
+  // Only allow IPs in the VM subnet
+  if (!ip.startsWith(ALLOWED_VM_SUBNET)) return false;
+  // Block infrastructure ports
+  if (BLOCKED_PORTS.has(port)) return false;
+  return true;
+}
+
+function extractJwtFromRequest(cookieHeader?: string, authHeader?: string): string | null {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7);
+  }
+  if (cookieHeader) {
+    const match = cookieHeader.match(/aldaro_session=([^;]+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 // Validate required config
 const serviceSecret = process.env.GATEWAY_SERVICE_SECRET;
-if (!serviceSecret && isProduction) {
-  console.error('FATAL: GATEWAY_SERVICE_SECRET is required in production');
-  process.exit(1);
+if (isProduction) {
+  if (!serviceSecret) {
+    console.error('FATAL: GATEWAY_SERVICE_SECRET is required in production');
+    process.exit(1);
+  }
+  if (!JWT_SECRET) {
+    console.error('FATAL: JWT_ACCESS_SECRET is required in production for PRIVATE port auth');
+    process.exit(1);
+  }
 }
 
 const prisma = new PrismaClient();
-const fastify = Fastify({ logger: true });
+
+// ---------------------------------------------------------------------------
+// TLS support: If TLS_CERT_PATH and TLS_KEY_PATH are set, the gateway
+// listens on HTTPS directly (useful without an external TLS terminator).
+// For production, prefer Caddy (see deploy/Caddyfile) in front of this.
+// ---------------------------------------------------------------------------
+const TLS_CERT_PATH = process.env.TLS_CERT_PATH;
+const TLS_KEY_PATH = process.env.TLS_KEY_PATH;
+let httpsOptions: { key: Buffer; cert: Buffer } | undefined;
+
+if (TLS_CERT_PATH && TLS_KEY_PATH) {
+  try {
+    httpsOptions = {
+      key: fs.readFileSync(TLS_KEY_PATH),
+      cert: fs.readFileSync(TLS_CERT_PATH),
+    };
+    console.log('[GATEWAY] TLS enabled — serving HTTPS directly');
+  } catch (err) {
+    console.error(`[GATEWAY] Failed to load TLS cert/key: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
+const fastify = Fastify({
+  logger: true,
+  ...(httpsOptions ? { https: httpsOptions } : {}),
+});
 
 const PORT_RANGE_START = 20000;
 const PORT_RANGE_END = 40000;
@@ -354,6 +449,14 @@ fastify.post('/internal/gateway/release', async (request, reply) => {
 fastify.post('/internal/gateway/expose-port', async (request, reply) => {
   const { workspace_id, internal_port, subdomain, vm_internal_ip, access_mode } = exposePortSchema.parse(request.body);
 
+  // SECURITY: Block SSRF — only allow proxying to workspace VM subnet
+  if (!isAllowedProxyTarget(vm_internal_ip, internal_port)) {
+    return reply.status(400).send({
+      error: 'Invalid target',
+      message: 'Target IP or port is not allowed',
+    });
+  }
+
   const mapping: ExposedPortMapping = {
     workspace_id,
     internal_port,
@@ -470,14 +573,24 @@ fastify.all('/proxy/:subdomain/*', async (request: any, reply) => {
     return reply.status(404).send({ error: 'Not found', message: 'No service exposed at this subdomain' });
   }
 
-  // For PRIVATE ports, verify JWT cookie
+  // For PRIVATE ports, verify JWT signature (not just presence)
   if (mapping.access_mode === 'PRIVATE') {
-    const authCookie = request.cookies?.auth_token || request.headers['authorization'];
-    if (!authCookie) {
+    const token = extractJwtFromRequest(
+      request.headers.cookie as string | undefined,
+      request.headers.authorization as string | undefined,
+    );
+    if (!token) {
       return reply.status(401).send({ error: 'Unauthorized', message: 'This port requires Aldaro authentication' });
     }
-    // In production, verify JWT here. For now, presence check is sufficient.
-    // Full JWT verification will be added when gateway has access to JWT secret.
+    const { valid } = verifyJwt(token);
+    if (!valid) {
+      return reply.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired authentication token' });
+    }
+  }
+
+  // SECURITY: Defense-in-depth SSRF check at proxy time
+  if (!isAllowedProxyTarget(mapping.vm_internal_ip, mapping.internal_port)) {
+    return reply.status(403).send({ error: 'Forbidden', message: 'Target is blocked by security policy' });
   }
 
   // Proxy to the VM
@@ -498,12 +611,13 @@ fastify.server.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buff
     return;
   }
 
-  // For PRIVATE ports, check auth cookie in upgrade request
+  // For PRIVATE ports, verify JWT signature on WebSocket upgrade
   if (mapping.access_mode === 'PRIVATE') {
-    const cookieHeader = req.headers.cookie || '';
-    const hasAuth = cookieHeader.includes('auth_token=');
-    const hasAuthHeader = !!req.headers['authorization'];
-    if (!hasAuth && !hasAuthHeader) {
+    const token = extractJwtFromRequest(
+      req.headers.cookie as string | undefined,
+      req.headers.authorization as string | undefined,
+    );
+    if (!token || !verifyJwt(token).valid) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -600,7 +714,24 @@ const start = async () => {
 
     const port = parseInt(process.env.GATEWAY_PORT || '5001');
     await fastify.listen({ port, host: '0.0.0.0' });
-    console.log(`Gateway listening on port ${port}`);
+    const protocol = httpsOptions ? 'HTTPS' : 'HTTP';
+    console.log(`Gateway listening on ${protocol} port ${port}`);
+
+    // If using direct TLS, watch cert files for renewal and reload
+    if (TLS_CERT_PATH && TLS_KEY_PATH && httpsOptions) {
+      const TLS_RELOAD_INTERVAL_MS = parseInt(process.env.TLS_RELOAD_INTERVAL_MS || String(6 * 60 * 60 * 1000)); // 6 hours
+      setInterval(() => {
+        try {
+          const newKey = fs.readFileSync(TLS_KEY_PATH);
+          const newCert = fs.readFileSync(TLS_CERT_PATH);
+          const server = fastify.server as https.Server;
+          server.setSecureContext({ key: newKey, cert: newCert });
+          console.log('[GATEWAY] TLS certificates reloaded');
+        } catch (err) {
+          console.error(`[GATEWAY] Failed to reload TLS certificates: ${(err as Error).message}`);
+        }
+      }, TLS_RELOAD_INTERVAL_MS);
+    }
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

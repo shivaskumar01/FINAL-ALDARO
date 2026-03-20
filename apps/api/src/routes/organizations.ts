@@ -331,16 +331,12 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
       },
     });
 
-    // In production, send an email with the invite link.
-    // For now, return the token for development use.
-    const inviteUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/org/accept-invite?token=${token}`;
-    console.log(`[DEV] Org invite link for ${body.email}: ${inviteUrl}`);
+    // SECURITY: Token sent via email outbox only — never log raw tokens.
+    console.log(`[Org] Invitation created for ${body.email} to org ${org.slug}`);
 
     return reply.status(201).send({
       ok: true,
       message: `Invitation sent to ${body.email}.`,
-      // Only expose token in non-production for testing
-      ...(process.env.NODE_ENV !== 'production' && { token }),
     });
   });
 

@@ -84,8 +84,8 @@ function clearLoginFailures(keys: string[]) {
 }
 
 const loginSchema = z.object({
-  email: z.string(),
-  password: z.string(),
+  email: z.string().email().max(320),
+  password: z.string().max(256),
 });
 
 const forgotPasswordSchema = z.object({
@@ -195,7 +195,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     try {
       const token = request.cookies[SESSION_COOKIE_NAME];
       if (token) {
-        const decoded = fastify.jwt.decode(token) as any;
+        // SECURITY: verify signature, don't just decode — prevents forged userId in logs
+        const decoded = fastify.jwt.verify(token) as any;
         userId = decoded?.userId;
       }
     } catch {}
@@ -265,15 +266,22 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
 
       await logSecurityEvent(request, user.id, SecurityEventType.PW_RESET_REQ);
       
-      // In a real app, send email here. For now, we'll just log it.
-      console.log(`[DEV] Password reset link: http://localhost:3000/reset-password?token=${resetToken}`);
+      // SECURITY: Token sent via email outbox only — never log raw tokens.
+      console.log(`[Auth] Password reset requested for user ${user.id}`);
     }
 
     // Always return success to prevent enumeration
     return { ok: true, message: 'If an account exists, a reset link has been sent.' };
   });
 
-  fastify.post('/reset-password', async (request, reply) => {
+  fastify.post('/reset-password', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes',
+      },
+    },
+  }, async (request, reply) => {
     const { token, newPassword } = resetPasswordSchema.parse(request.body);
 
     if (!validatePassword(newPassword)) {

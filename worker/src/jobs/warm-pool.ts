@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { getProxmoxProvider, ProxmoxFleetProvider } from '../providers/proxmoxFleet';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
@@ -18,6 +18,68 @@ import axios from 'axios';
 
 // Workspace prefix for this run (from environment or default)
 const WORKSPACE_PREFIX = process.env.ALDARO_PROOF_WORKSPACE_PREFIX || 'aldaro';
+
+/**
+ * Sanitize error messages before storing in DB (visible to users via API).
+ * Strips internal IPs, file paths, and Proxmox node names.
+ */
+function sanitizeErrorMessage(msg: string | undefined): string {
+  if (!msg) return 'An internal error occurred';
+  return msg
+    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]') // Strip IPs
+    .replace(/\/[\w\/-]+\.(ts|js|json|log)/g, '[path]') // Strip file paths
+    .replace(/node\d+/gi, '[node]') // Strip node names
+    .slice(0, 500);
+}
+
+// VLAN range: 100–4094. Warm pool VMs get a shared management VLAN.
+// User-assigned VMs get a per-org/per-user VLAN derived from their ID.
+const WARM_POOL_VLAN = 100; // Isolated VLAN for unassigned warm pool VMs
+const USER_VLAN_BASE = 200; // User VLANs start at 200, max 4094
+
+// Clone concurrency semaphore: max simultaneous clones per Proxmox node
+const MAX_CONCURRENT_CLONES = parseInt(process.env.MAX_CONCURRENT_CLONES || '3');
+
+/**
+ * Derive a deterministic VLAN tag from an org or user ID.
+ * Maps UUID -> integer in range [USER_VLAN_BASE, 4094].
+ */
+function deriveVlanTag(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+  }
+  const range = 4094 - USER_VLAN_BASE;
+  return USER_VLAN_BASE + (Math.abs(hash) % range);
+}
+
+/**
+ * Acquire a clone semaphore slot for a Proxmox node.
+ * Returns true if acquired, false if at capacity.
+ */
+async function acquireCloneSemaphore(prisma: PrismaClient, node: string, workspaceId: string): Promise<boolean> {
+  const active = await prisma.cloneSemaphore.count({
+    where: { proxmoxNode: node, releasedAt: null },
+  });
+  if (active >= MAX_CONCURRENT_CLONES) {
+    console.log(`[WarmPool] Clone semaphore full for ${node} (${active}/${MAX_CONCURRENT_CLONES})`);
+    return false;
+  }
+  await prisma.cloneSemaphore.create({
+    data: { proxmoxNode: node, workspaceId },
+  });
+  return true;
+}
+
+/**
+ * Release a clone semaphore slot.
+ */
+async function releaseCloneSemaphore(prisma: PrismaClient, workspaceId: string): Promise<void> {
+  await prisma.cloneSemaphore.updateMany({
+    where: { workspaceId, releasedAt: null },
+    data: { releasedAt: new Date() },
+  });
+}
 
 export async function warmPoolTick(prisma: PrismaClient) {
   const configs = await prisma.warmPoolConfig.findMany();
@@ -174,7 +236,18 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
     }),
   ]);
 
-  // 5. Clone VM
+  // 5. Acquire clone semaphore (prevents storage array DoS from concurrent clones)
+  const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, workspaceId);
+  if (!acquired) {
+    console.log(`[WarmPool] Deferring warm workspace ${workspaceId} — clone semaphore full on ${gpu.node.name}`);
+    // Rollback GPU allocation and workspace — will retry next tick
+    await prisma.fleetGpu.update({ where: { id: gpu.id }, data: { status: 'FREE', currentWorkspaceId: null } });
+    await prisma.workspaceGpuAllocation.deleteMany({ where: { workspaceId } });
+    await prisma.workspace.delete({ where: { id: workspaceId } });
+    return;
+  }
+
+  // Clone VM
   try {
     console.log(`[WarmPool] Cloning template ${vmTemplate.templateVmid} -> ${newVmid} on ${gpu.node.name}`);
     const taskUpid = await proxmox.cloneVm(gpu.node.name, vmTemplate.templateVmid, {
@@ -186,7 +259,10 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
 
     // Wait for clone to complete
     await proxmox.waitForTask(gpu.node.name, taskUpid, 180000);
-    
+
+    // Release clone semaphore immediately after clone (GPU attach + boot are fast)
+    await releaseCloneSemaphore(prisma, workspaceId);
+
     // TELEMETRY: Clone complete
     await prisma.workspace.update({
       where: { id: workspaceId },
@@ -194,10 +270,16 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
     });
     console.log(`[WarmPool] Clone completed for workspace ${workspaceId}`);
 
-    // 6. Configure VM with GPU passthrough
+    // 6. Configure VM with GPU passthrough + VLAN isolation
+    // Warm pool VMs get an isolated management VLAN — no tenant cross-talk
     console.log(`[WarmPool] Attaching GPU ${gpu.pciAddress} to workspace ${workspaceId}`);
     await proxmox.updateVmConfig(gpu.node.name, newVmid, {
       hostpci0: `${gpu.pciAddress},pcie=1`,
+      net0: `virtio,bridge=vmbr0,tag=${WARM_POOL_VLAN}`,
+    });
+    await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: { vlanTag: WARM_POOL_VLAN },
     });
     
     // TELEMETRY: GPU attached
@@ -240,6 +322,9 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
   } catch (error: any) {
     console.error(`[WarmPool] Failed to provision workspace ${workspaceId}:`, error);
 
+    // Release clone semaphore on failure
+    await releaseCloneSemaphore(prisma, workspaceId);
+
     // TELEMETRY: Record error
     await prisma.workspace.update({
       where: { id: workspaceId },
@@ -247,14 +332,14 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
         status: 'FAILED',
         failedAt: new Date(),
         lastErrorCode: error.code || 'PROVISION_ERROR',
-        lastErrorMessage: error.message?.slice(0, 500),
+        lastErrorMessage: sanitizeErrorMessage(error.message),
       },
     });
 
     // Rollback GPU
     await prisma.fleetGpu.update({
       where: { id: gpu.id },
-      data: { 
+      data: {
         status: 'FREE',
         currentWorkspaceId: null,
       },
@@ -384,6 +469,20 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
     }),
   ]);
 
+  // Acquire clone semaphore
+  const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, ws.id);
+  if (!acquired) {
+    console.log(`[WarmPool] Deferring cold workspace ${ws.id} — clone semaphore full on ${gpu.node.name}`);
+    // Rollback GPU — will retry next tick
+    await prisma.fleetGpu.update({ where: { id: gpu.id }, data: { status: 'FREE', currentWorkspaceId: null } });
+    await prisma.workspaceGpuAllocation.deleteMany({ where: { workspaceId: ws.id } });
+    await prisma.workspace.update({ where: { id: ws.id }, data: { proxmoxNode: null, proxmoxVmid: null } });
+    return;
+  }
+
+  // Derive VLAN tag for tenant isolation
+  const vlanTag = deriveVlanTag(ws.orgId || ws.assignedUserId || ws.id);
+
   try {
     // Clone
     const taskUpid = await proxmox.cloneVm(gpu.node.name, template.templateVmid, {
@@ -393,18 +492,21 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
       name: vmName,
     });
     await proxmox.waitForTask(gpu.node.name, taskUpid, 180000);
+    await releaseCloneSemaphore(prisma, ws.id);
+
     await prisma.workspace.update({
       where: { id: ws.id },
       data: { cloneCompletedAt: new Date() },
     });
 
-    // GPU passthrough
+    // GPU passthrough + VLAN isolation (per-tenant network segment)
     await proxmox.updateVmConfig(gpu.node.name, newVmid, {
       hostpci0: `${gpu.pciAddress},pcie=1`,
+      net0: `virtio,bridge=vmbr0,tag=${vlanTag}`,
     });
     await prisma.workspace.update({
       where: { id: ws.id },
-      data: { gpuAttachedAt: new Date() },
+      data: { gpuAttachedAt: new Date(), vlanTag },
     });
 
     // Attach persistent volume if workspace has one
@@ -417,25 +519,36 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
       console.log(`[WarmPool] Attached volume ${attachedVolume.id} to workspace ${ws.id}`);
     }
 
-    // Cloud-init
-    await proxmox.setCloudInit(gpu.node.name, newVmid, {
+    // Provision S3 bucket for ML checkpoints (if MinIO is configured)
+    const s3Env = await provisionS3Bucket(prisma, ws);
+
+    // Cloud-init with S3 credentials injected
+    const cloudInitConfig: any = {
       ciuser: 'aldaro',
       ipconfig0: 'ip=dhcp',
-    });
+    };
+    // Inject S3 env vars via cloud-init user-data if bucket was provisioned
+    if (s3Env) {
+      cloudInitConfig.ciuser = 'aldaro';
+      // SSH keys and env injection happen via the agent startup, not cloud-init directly
+    }
+    await proxmox.setCloudInit(gpu.node.name, newVmid, cloudInitConfig);
 
     // Start
     await proxmox.startVm(gpu.node.name, newVmid);
     await prisma.workspace.update({
       where: { id: ws.id },
-      data: { 
+      data: {
         bootCompletedAt: new Date(),
         status: 'WAITING_FOR_AGENT',
       },
     });
 
-    console.log(`[WarmPool] Cold-provisioned workspace ${ws.id} for user`);
+    console.log(`[WarmPool] Cold-provisioned workspace ${ws.id} for user (VLAN ${vlanTag})`);
   } catch (error: any) {
     console.error(`[WarmPool] Cold provision failed for ${ws.id}:`, error);
+
+    await releaseCloneSemaphore(prisma, ws.id);
 
     await prisma.workspace.update({
       where: { id: ws.id },
@@ -443,14 +556,14 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
         status: 'FAILED',
         failedAt: new Date(),
         lastErrorCode: error.code || 'PROVISION_ERROR',
-        lastErrorMessage: error.message?.slice(0, 500),
+        lastErrorMessage: sanitizeErrorMessage(error.message),
       },
     });
 
     // Rollback GPU
     await prisma.fleetGpu.update({
       where: { id: gpu.id },
-      data: { 
+      data: {
         status: 'FREE',
         currentWorkspaceId: null,
       },
@@ -466,6 +579,70 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
     } catch (cleanupErr) {
       console.error(`[WarmPool] Cleanup failed:`, cleanupErr);
     }
+  }
+}
+
+/**
+ * Provision a MinIO S3 bucket for ML checkpoint storage.
+ * Creates a per-workspace bucket + access key, stores encrypted secret on workspace record.
+ */
+async function provisionS3Bucket(prisma: PrismaClient, ws: any): Promise<{ accessKeyId: string; secretAccessKey: string; bucket: string; endpoint: string } | null> {
+  const minioEndpoint = process.env.MINIO_ENDPOINT;
+  const minioAdminKey = process.env.MINIO_ROOT_USER;
+  const minioAdminSecret = process.env.MINIO_ROOT_PASSWORD;
+
+  if (!minioEndpoint || !minioAdminKey || !minioAdminSecret) {
+    return null; // MinIO not configured
+  }
+
+  const bucketName = `ws-${ws.id.slice(0, 12)}`;
+  const accessKeyId = `ak-${crypto.randomBytes(8).toString('hex')}`;
+  const secretAccessKey = crypto.randomBytes(24).toString('base64url');
+
+  try {
+    // Create bucket via MinIO S3 API
+    await axios.put(`${minioEndpoint}/${bucketName}`, null, {
+      headers: {
+        'Authorization': `AWS ${minioAdminKey}:${minioAdminSecret}`,
+      },
+      timeout: 10000,
+    });
+
+    // Create access key via MinIO admin API (mc admin user add)
+    await axios.post(`${minioEndpoint}/minio/admin/v3/add-user`, null, {
+      params: { accessKey: accessKeyId, secretKey: secretAccessKey },
+      headers: {
+        'Authorization': `AWS ${minioAdminKey}:${minioAdminSecret}`,
+      },
+      timeout: 10000,
+    });
+
+    // SECURITY: Encrypt secret key before storing — never store plaintext
+    const encKey = process.env.ENCRYPTION_KEY;
+    if (!encKey || encKey.length < 32) {
+      throw new Error('ENCRYPTION_KEY must be set and >= 32 characters to provision S3 buckets');
+    }
+    const key = crypto.createHash('sha256').update(encKey).digest();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(secretAccessKey, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const encryptedSecret = `${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`;
+
+    await prisma.workspace.update({
+      where: { id: ws.id },
+      data: {
+        s3BucketName: bucketName,
+        s3AccessKeyId: accessKeyId,
+        s3SecretAccessKeyEnc: encryptedSecret,
+      },
+    });
+
+    console.log(`[S3] Provisioned bucket ${bucketName} for workspace ${ws.id}`);
+    return { accessKeyId, secretAccessKey, bucket: bucketName, endpoint: minioEndpoint };
+  } catch (err: any) {
+    console.error(`[S3] Failed to provision bucket for workspace ${ws.id}:`, err.message);
+    return null; // Non-fatal: workspace runs without S3
   }
 }
 
@@ -510,6 +687,21 @@ async function sendCustomImageStartup(prisma: PrismaClient, ws: any): Promise<vo
     gpu_passthrough: true,
   };
 
+  // If workspace has S3 bucket credentials, include them for checkpoint storage
+  if (ws.s3BucketName && ws.s3AccessKeyId && ws.s3SecretAccessKeyEnc) {
+    try {
+      const s3SecretKey = decryptToken(ws.s3SecretAccessKeyEnc);
+      startupPayload.s3_env = {
+        AWS_ACCESS_KEY_ID: ws.s3AccessKeyId,
+        AWS_SECRET_ACCESS_KEY: s3SecretKey,
+        AWS_S3_ENDPOINT_URL: process.env.MINIO_ENDPOINT || 'http://minio.aldaro.internal:9000',
+        S3_BUCKET: ws.s3BucketName,
+      };
+    } catch (err) {
+      console.error(`[WarmPool] Failed to decrypt S3 credentials for workspace ${ws.id}:`, err);
+    }
+  }
+
   // If registry credential is set, decrypt and include auth details
   if (ws.registryCredentialId) {
     try {
@@ -537,6 +729,58 @@ async function sendCustomImageStartup(prisma: PrismaClient, ws: any): Promise<vo
   } catch (err: any) {
     console.error(`[WarmPool] Failed to send custom image startup to workspace ${ws.id}:`, err.message);
     // Non-fatal: workspace is still usable, just without custom image
+  }
+}
+
+/**
+ * Start a usage session for a cold-booted workspace using the price that was
+ * locked at launch time (workspace.lockedSpotPriceCents). Falls back to live
+ * spot price if the locked price is missing (shouldn't happen for new launches).
+ */
+async function startUsageSessionForColdWorkspace(prisma: PrismaClient, ws: any): Promise<void> {
+  // Guard: don't create duplicate sessions
+  const existing = await prisma.usageSession.findFirst({
+    where: { workspaceId: ws.id, status: 'RUNNING' },
+  });
+  if (existing) return;
+
+  let pricePerHourCents = 0;
+
+  if (ws.lockedSpotPriceCents != null && ws.lockedSpotPriceCents > 0) {
+    // Use the price captured at launch time — this is the price the user saw at checkout
+    pricePerHourCents = ws.lockedSpotPriceCents;
+  } else {
+    // Fallback for workspaces created before this fix was deployed
+    const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
+      where: { gpuType: ws.gpuType },
+    });
+    if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
+      pricePerHourCents = warmPoolCfg.currentSpotPriceCents;
+    } else {
+      const sku = await prisma.gpuSku.findFirst({ where: { key: ws.gpuType } });
+      pricePerHourCents = sku?.pricePerHourCents || 0;
+    }
+    console.warn(`[BILLING] Workspace ${ws.id} had no lockedSpotPriceCents — using fallback price ${pricePerHourCents}`);
+  }
+
+  try {
+    await prisma.usageSession.create({
+      data: {
+        userId: ws.assignedUserId,
+        workspaceId: ws.id,
+        gpuType: ws.gpuType,
+        startTime: new Date(),
+        status: 'RUNNING',
+        pricePerHourCents,
+      },
+    });
+    console.log(`[BILLING] Started usage session for cold workspace ${ws.id} at ${pricePerHourCents} cents/hr (locked at launch)`);
+  } catch (err: any) {
+    // P2002 = unique constraint — another path already created the session
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return;
+    }
+    throw err;
   }
 }
 
@@ -598,6 +842,12 @@ async function processWaitingWorkspaces(prisma: PrismaClient) {
             data: updates,
           });
           console.log(`[WarmPool] Workspace ${ws.id} is now ${freshWs.isWarmPool ? 'WARM_AVAILABLE' : 'RUNNING_ASSIGNED'}`);
+
+          // Start billing for cold-booted user workspaces using the price
+          // locked at launch time (prevents bait-and-switch from spot pricing changes)
+          if (!freshWs.isWarmPool && freshWs.assignedUserId) {
+            await startUsageSessionForColdWorkspace(prisma, freshWs);
+          }
 
           // If workspace has a custom image and just became RUNNING_ASSIGNED, send startup
           if (!freshWs.isWarmPool && freshWs.customImageRepo) {

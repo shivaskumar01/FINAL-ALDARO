@@ -251,6 +251,27 @@ export class WorkspaceService {
   }
 
   private async createColdWorkspace(userId: string, gpuType: string, region: string, operationKey: string, maxDurationMinutes?: number, customImageRepo?: string, customImageTag?: string, registryCredentialId?: string) {
+    // Lock the spot price at the moment the user clicks "Launch".
+    // This prevents bait-and-switch if the spot pricing job updates
+    // the price during the cold boot window (which can be minutes).
+    let lockedSpotPriceCents: number | null = null;
+    const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
+      where: { gpuType },
+    });
+    if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
+      lockedSpotPriceCents = warmPoolCfg.currentSpotPriceCents;
+      // Update lastRentalAt for demand tracking (cold launches count as demand too)
+      await prisma.warmPoolConfig.update({
+        where: { id: warmPoolCfg.id },
+        data: { lastRentalAt: new Date() },
+      });
+    } else {
+      const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
+      if (sku) {
+        lockedSpotPriceCents = sku.pricePerHourCents;
+      }
+    }
+
     const workspace = await prisma.workspace.create({
       data: {
         assignedUserId: userId,
@@ -263,6 +284,7 @@ export class WorkspaceService {
         customImageRepo: customImageRepo ?? null,
         customImageTag: customImageTag ?? null,
         registryCredentialId: registryCredentialId ?? null,
+        lockedSpotPriceCents,
       },
     });
 
@@ -338,7 +360,7 @@ export class WorkspaceService {
     // This could be done via cloud-init, or via a secure agent API call
   }
 
-  async startUsageSession(userId: string, workspaceId: string, gpuType: string) {
+  async startUsageSession(userId: string, workspaceId: string, gpuType: string, lockedPriceCents?: number | null) {
     // Guard: do not create a duplicate session for an already-running workspace.
     // Application-level check (fast path) + DB partial unique index (safety net).
     const existing = await prisma.usageSession.findFirst({
@@ -346,26 +368,33 @@ export class WorkspaceService {
     });
     if (existing) return;
 
-    // Use spot price from WarmPoolConfig if available, fall back to GpuSku base price
-    const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
-      where: { gpuType },
-    });
-
     let pricePerHourCents = 0;
-    if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
-      pricePerHourCents = warmPoolCfg.currentSpotPriceCents;
 
-      // Update lastRentalAt to track demand for spot pricing algorithm
-      await prisma.warmPoolConfig.update({
-        where: { id: warmPoolCfg.id },
-        data: { lastRentalAt: new Date() },
-      });
+    if (lockedPriceCents != null && lockedPriceCents > 0) {
+      // Use the price that was locked at launch time (cold workspaces).
+      // This prevents bait-and-switch if spot pricing changed during boot.
+      pricePerHourCents = lockedPriceCents;
     } else {
-      const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
-      if (!sku) {
-        console.error(`[BILLING] GpuSku not found for key "${gpuType}" — session will have $0 pricing`);
+      // Warm path: fetch live spot price (session starts immediately, no drift window)
+      const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
+        where: { gpuType },
+      });
+
+      if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
+        pricePerHourCents = warmPoolCfg.currentSpotPriceCents;
+
+        // Update lastRentalAt to track demand for spot pricing algorithm
+        await prisma.warmPoolConfig.update({
+          where: { id: warmPoolCfg.id },
+          data: { lastRentalAt: new Date() },
+        });
+      } else {
+        const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
+        if (!sku) {
+          console.error(`[BILLING] GpuSku not found for key "${gpuType}" — session will have $0 pricing`);
+        }
+        pricePerHourCents = sku?.pricePerHourCents || 0;
       }
-      pricePerHourCents = sku?.pricePerHourCents || 0;
     }
 
     try {

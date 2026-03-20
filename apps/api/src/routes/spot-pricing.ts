@@ -17,7 +17,14 @@ export const spotPricingRoutes: FastifyPluginAsync = async (fastify: FastifyInst
    * Public endpoint — returns current spot prices for all GPU types.
    * No auth required for pricing transparency.
    */
-  fastify.get('/', async () => {
+  fastify.get('/', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async () => {
     const configs = await prisma.warmPoolConfig.findMany();
     const skus = await prisma.gpuSku.findMany({
       where: { enabled: true, key: { in: [...SUPPORTED_CUSTOMER_GPU_KEYS] } },
