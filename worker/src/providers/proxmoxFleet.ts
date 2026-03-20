@@ -1,8 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
+import https from 'https';
+import fs from 'fs';
 
 /**
  * Proxmox Fleet Provider for Aldaro Worker
- * 
+ *
  * This provides VM lifecycle operations on Aldaro-owned Proxmox infrastructure.
  * NO external GPU providers are supported.
  */
@@ -27,14 +29,28 @@ export class ProxmoxFleetProvider {
     private readonly host: string,
     private readonly apiToken: string
   ) {
+    // SECURITY: TLS verification is enabled by default. To use a custom CA
+    // (e.g. Proxmox self-signed), set PROXMOX_CA_CERT_PATH to the CA file.
+    // Only disable TLS verification in local dev via PROXMOX_TLS_SKIP_VERIFY=true.
+    const skipVerify = process.env.PROXMOX_TLS_SKIP_VERIFY === 'true';
+    const caPath = process.env.PROXMOX_CA_CERT_PATH;
+    let agent: https.Agent;
+
+    if (caPath) {
+      agent = new https.Agent({ ca: fs.readFileSync(caPath), rejectUnauthorized: true });
+    } else if (skipVerify && process.env.NODE_ENV !== 'production') {
+      agent = new https.Agent({ rejectUnauthorized: false });
+    } else {
+      agent = new https.Agent({ rejectUnauthorized: true });
+    }
+
     this.api = axios.create({
       baseURL: `${host}/api2/json`,
       headers: {
         'Authorization': apiToken,
         'Content-Type': 'application/json',
       },
-      // In production with proper certs, remove this
-      httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+      httpsAgent: agent,
     });
   }
 

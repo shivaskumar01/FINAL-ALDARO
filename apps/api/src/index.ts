@@ -188,7 +188,7 @@ if (!jwtSecret || !cookieSecret) {
 fastify.register(jwt, {
   secret: jwtSecret,
   sign: {
-    expiresIn: '12h',
+    expiresIn: '2h',
   },
 });
 
