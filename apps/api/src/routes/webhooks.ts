@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { dispatchWebhook } from '../lib/webhookDispatch';
+import { encryptSecret } from '../lib/encryption';
 
 const prisma = new PrismaClient();
 
@@ -95,13 +96,15 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     }
 
     // Auto-generate HMAC signing secret
-    const secret = `whsec_${crypto.randomBytes(32).toString('base64url')}`;
+    const rawSecret = `whsec_${crypto.randomBytes(32).toString('base64url')}`;
+    // Encrypt at rest — decrypted on dispatch for HMAC signing
+    const encryptedSecret = encryptSecret(rawSecret);
 
     const endpoint = await prisma.webhookEndpoint.create({
       data: {
         userId,
         url: body.url,
-        secret,
+        secret: encryptedSecret,
         events: JSON.stringify(body.events),
       },
     });
@@ -110,7 +113,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       id: endpoint.id,
       url: endpoint.url,
       events: JSON.parse(endpoint.events),
-      secret,
+      secret: rawSecret,
       enabled: endpoint.enabled,
       createdAt: endpoint.createdAt,
       _notice: 'Store the signing secret securely. It will not be shown again.',

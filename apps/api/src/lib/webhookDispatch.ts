@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import { decryptSecret } from './encryption';
 
 const prisma = new PrismaClient();
 
@@ -141,7 +142,9 @@ async function deliverToEndpoint(
 
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      const result = await sendWebhookRequest(endpoint.url, endpoint.secret, payload);
+      // Decrypt secret (handles both encrypted and legacy plaintext values)
+      const signingSecret = decryptSecret(endpoint.secret);
+      const result = await sendWebhookRequest(endpoint.url, signingSecret, payload);
       lastStatus = result.status;
       lastBody = result.body;
 
