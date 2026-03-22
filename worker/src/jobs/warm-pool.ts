@@ -26,9 +26,14 @@ const WORKSPACE_PREFIX = process.env.ALDARO_PROOF_WORKSPACE_PREFIX || 'aldaro';
 function sanitizeErrorMessage(msg: string | undefined): string {
   if (!msg) return 'An internal error occurred';
   return msg
-    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]') // Strip IPs
-    .replace(/\/[\w\/-]+\.(ts|js|json|log)/g, '[path]') // Strip file paths
-    .replace(/node\d+/gi, '[node]') // Strip node names
+    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]')          // IPv4
+    .replace(/\[?[0-9a-f]{0,4}(?:::[0-9a-f:]+)+\]?/gi, '[IPv6]')         // IPv6
+    .replace(/:\d{4,5}\b/g, ':[PORT]')                                     // Service ports
+    .replace(/[\w-]+\.[\w-]+\.(local|internal|ai|lan)\b/gi, '[host]')      // Internal DNS
+    .replace(/\/[\w\/-]+\.(ts|js|json|log|sock|pid)/g, '[path]')           // File paths
+    .replace(/node\d+/gi, '[node]')                                        // Node names
+    .replace(/pve\d*/gi, '[pve]')                                          // Proxmox nodes
+    .replace(/UPID:[^\s]+/g, '[UPID]')                                     // Proxmox task IDs
     .slice(0, 500);
 }
 

@@ -393,8 +393,16 @@ fastify.decorate('requireReauth', async (request: any, reply: any) => {
   if (!user || !user.lastReauthAt) return reply.status(403).send({ error: 'Re-authentication required', code: 'REAUTH_REQUIRED' });
 
   const ageMinutes = (Date.now() - user.lastReauthAt.getTime()) / 60000;
-  if (ageMinutes > 30) {
+  // SECURITY: 5-minute window for reauth gate (tightened from 30 min)
+  if (ageMinutes > 5) {
     return reply.status(403).send({ error: 'Re-authentication expired', code: 'REAUTH_REQUIRED' });
+  }
+
+  // SECURITY: Reauth must have happened AFTER this token was issued.
+  // Prevents stolen pre-reauth tokens from passing the gate.
+  const tokenIat = request.user?.iat;
+  if (tokenIat && user.lastReauthAt.getTime() < tokenIat * 1000) {
+    return reply.status(403).send({ error: 'Re-authentication required', code: 'REAUTH_REQUIRED' });
   }
 });
 

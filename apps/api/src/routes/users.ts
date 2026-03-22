@@ -29,7 +29,10 @@ export const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     return user;
   });
 
-  fastify.put('/settings', async (request: any, reply) => {
+  fastify.put('/settings', {
+    // Require recent re-authentication for sensitive account changes (email)
+    preHandler: fastify.requireReauth as any,
+  }, async (request: any, reply) => {
     const userId = request.user.userId;
     const data = updateSettingsSchema.parse(request.body);
 

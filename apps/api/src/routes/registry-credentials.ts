@@ -7,6 +7,25 @@ const prisma = new PrismaClient();
 
 const REGISTRY_TYPES = ['DOCKER_HUB', 'AWS_ECR', 'GCP_GCR', 'GITHUB_GHCR', 'CUSTOM'] as const;
 
+// SECURITY: Block SSRF in registry URL verification
+function isAllowedRegistryUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    // Block loopback, link-local, metadata, and private IPs
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return false;
+    if (host.startsWith('169.254.')) return false;
+    if (host.startsWith('10.') || host.startsWith('192.168.')) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    if (host.endsWith('.local') || host.endsWith('.internal')) return false;
+    // Must be HTTPS (except for docker.io compatibility)
+    if (parsed.protocol !== 'https:' && !host.includes('docker.io')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const createCredentialSchema = z.object({
   name: z.string().min(1).max(128).default('Default Registry'),
   registryUrl: z.string().url().max(512),
@@ -63,6 +82,16 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
     const { name, registryUrl, registryType, username, token } = createCredentialSchema.parse(request.body);
+
+    // SECURITY: Block internal/private registry URLs
+    if (!isAllowedRegistryUrl(registryUrl)) {
+      return reply.status(400).send({
+        errorCode: 'INVALID_REGISTRY_URL',
+        message: 'Registry URL must not target internal or private addresses.',
+        error: 'Registry URL must not target internal or private addresses.',
+        requestId: request.id,
+      });
+    }
 
     // Limit credentials per user (max 20)
     const existing = await prisma.imageRegistryCredential.count({
@@ -192,6 +221,16 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
     try {
       const token = decryptToken(credential.encryptedToken);
       const registryUrl = credential.registryUrl.replace(/\/+$/, '');
+
+      // SECURITY: SSRF check — block requests to internal/private addresses
+      if (!isAllowedRegistryUrl(registryUrl)) {
+        return {
+          id: credential.id,
+          verified: false,
+          lastVerifiedAt: new Date(),
+          error: 'Registry URL targets a blocked address.',
+        };
+      }
 
       // Attempt a HEAD/GET request to the registry API to validate credentials
       // Different registries use different auth mechanisms

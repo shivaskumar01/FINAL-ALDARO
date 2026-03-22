@@ -507,7 +507,9 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/terminate-workspace
   // Terminates a workspace (idempotent)
   // =========================================================================
-  fastify.post('/actions/terminate-workspace', async (request: any) => {
+  fastify.post('/actions/terminate-workspace', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: any) => {
     const { workspaceId, reason } = request.body as { workspaceId: string; reason?: string };
     const actorId = request.user.userId;
 
@@ -546,7 +548,9 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/disable-gpu
   // Disables a GPU
   // =========================================================================
-  fastify.post('/actions/disable-gpu', async (request: any) => {
+  fastify.post('/actions/disable-gpu', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: any) => {
     const { gpuId, reason } = request.body as { gpuId: string; reason?: string };
     const actorId = request.user.userId;
 
@@ -572,7 +576,9 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/drain-node
   // Enables/disables a node for new workloads
   // =========================================================================
-  fastify.post('/actions/drain-node', async (request: any) => {
+  fastify.post('/actions/drain-node', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request: any) => {
     const { nodeId, enabled } = request.body as { nodeId: string; enabled: boolean };
     const actorId = request.user.userId;
 
@@ -628,7 +634,9 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/emergency-stop
   // Stops all provisioning activity (circuit breaker)
   // =========================================================================
-  fastify.post('/actions/emergency-stop', async (request: any) => {
+  fastify.post('/actions/emergency-stop', {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, async (request: any) => {
     const { enabled, reason } = request.body as { enabled: boolean; reason: string };
     const actorId = request.user.userId;
 

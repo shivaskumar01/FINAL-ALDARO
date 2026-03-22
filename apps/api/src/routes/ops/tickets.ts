@@ -77,7 +77,14 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // POST /api/ops/tickets/:id/refund — refund the linked usage session
-  fastify.post('/:id/refund', async (request: any, reply: any) => {
+  fastify.post('/:id/refund', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 hour',
+      },
+    },
+  }, async (request: any, reply: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
 
     const ticket = await prisma.supportTicket.findUnique({ where: { id } });
@@ -148,16 +155,19 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     const gpu = await prisma.fleetGpu.findUnique({ where: { id: body.gpuId } });
     if (!gpu) return reply.status(404).send({ error: 'GPU not found' });
 
-    // SECURITY: Verify GPU is related to the ticket's workspace/session
-    if (ticket.usageSessionId) {
-      const session = await prisma.usageSession.findUnique({
-        where: { id: ticket.usageSessionId },
-        select: { workspace: { select: { gpuAllocation: { select: { gpuId: true } } } } },
-      });
-      const ticketGpuId = session?.workspace?.gpuAllocation?.gpuId;
-      if (ticketGpuId && ticketGpuId !== body.gpuId) {
-        return reply.status(400).send({ error: 'GPU is not associated with this ticket\'s workspace' });
-      }
+    // SECURITY: Verify GPU is related to the ticket's workspace/session.
+    // Tickets without a linked session cannot quarantine GPUs — prevents
+    // arbitrary GPU quarantine by creating unlinked tickets.
+    if (!ticket.usageSessionId) {
+      return reply.status(400).send({ error: 'Cannot quarantine GPU: ticket has no linked usage session' });
+    }
+    const session = await prisma.usageSession.findUnique({
+      where: { id: ticket.usageSessionId },
+      select: { workspace: { select: { gpuAllocation: { select: { gpuId: true } } } } },
+    });
+    const ticketGpuId = session?.workspace?.gpuAllocation?.gpuId;
+    if (!ticketGpuId || ticketGpuId !== body.gpuId) {
+      return reply.status(400).send({ error: 'GPU is not associated with this ticket\'s workspace' });
     }
 
     await prisma.fleetGpu.update({

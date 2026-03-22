@@ -52,6 +52,21 @@ export class ProxmoxFleetProvider {
       },
       httpsAgent: agent,
     });
+
+    // SECURITY: Redact Authorization header from axios error objects
+    // to prevent token leakage in error logs or stack traces.
+    this.api.interceptors.response.use(
+      (res) => res,
+      (err) => {
+        if (err.config?.headers?.Authorization) {
+          err.config.headers.Authorization = '[REDACTED]';
+        }
+        if (err.response?.config?.headers?.Authorization) {
+          err.response.config.headers.Authorization = '[REDACTED]';
+        }
+        throw err;
+      }
+    );
   }
 
   async cloneVm(node: string, sourceVmid: number, req: ProxmoxCloneRequest): Promise<string> {

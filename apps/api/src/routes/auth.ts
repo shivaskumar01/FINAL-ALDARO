@@ -154,13 +154,15 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       return reply.status(401).send({ error: 'Invalid credentials.' });
     };
 
+    // SECURITY: Always run bcrypt.compare even when user is not found,
+    // so response timing doesn't reveal whether the email exists.
+    const DUMMY_HASH = '$2b$12$LJ3m4ys3Lg2VBe5E5hYGdOa1lMHaBPRvBNAPsXwXKiU3CkVha.XYG';
+    const hashToCompare = user?.passwordHash ?? DUMMY_HASH;
+    const valid = await bcrypt.compare(password, hashToCompare);
+
     if (!user) return fail();
     if (user.accountStatus !== 'ACTIVE') return fail('ACCOUNT_NOT_ACTIVE');
-
-    const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return fail();
-
-    // Constant-time comparison for secrets is handled by bcrypt.compare
 
     const token = fastify.jwt.sign(buildSessionTokenPayload(user));
 
@@ -323,6 +325,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
 
   fastify.post('/reauth', {
     preHandler: fastify.authenticate as any,
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes',
+        keyGenerator: (request: any) => request.user?.userId || request.ip,
+      },
+    },
   }, async (request: any, reply) => {
     const { password } = z.object({ password: z.string() }).parse(request.body);
     const userId = request.user.userId;
@@ -331,7 +340,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     if (!user) return reply.status(401).send({ error: 'Unauthorized' });
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return reply.status(401).send({ error: 'Invalid credentials.' });
+    if (!valid) {
+      await logSecurityEvent(request, userId, SecurityEventType.LOGIN_FAILURE, { reason: 'REAUTH_FAILED' });
+      return reply.status(401).send({ error: 'Invalid credentials.' });
+    }
 
     await prisma.user.update({
       where: { id: userId },

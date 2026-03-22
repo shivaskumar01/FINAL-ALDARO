@@ -62,7 +62,10 @@ fi
 
 # --- Prepare ---
 
+# SECURITY: Restrictive permissions on backup staging directory
 mkdir -p "${BACKUP_LOCAL_DIR}"
+chmod 700 "${BACKUP_LOCAL_DIR}"
+umask 077
 echo "[BACKUP] Starting database backup at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
 
 # --- Dump ---
@@ -84,10 +87,11 @@ echo "[BACKUP] Dump complete: ${DUMP_FILE} (${DUMP_SIZE})"
 if [ -n "${BACKUP_ENCRYPT_KEY:-}" ]; then
   echo "[BACKUP] Encrypting dump with AES-256-CBC..."
   UPLOAD_FILE="${DUMP_FILE}.enc"
-  openssl enc -aes-256-cbc -salt -pbkdf2 \
+  # SECURITY: Pass encryption key via stdin, not CLI args (avoids /proc exposure)
+  echo "${BACKUP_ENCRYPT_KEY}" | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
     -in "${BACKUP_LOCAL_DIR}/${DUMP_FILE}" \
     -out "${BACKUP_LOCAL_DIR}/${UPLOAD_FILE}" \
-    -pass "pass:${BACKUP_ENCRYPT_KEY}"
+    -pass stdin
   rm -f "${BACKUP_LOCAL_DIR}/${DUMP_FILE}"
   echo "[BACKUP] Encrypted: ${UPLOAD_FILE}"
 fi

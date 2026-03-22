@@ -24,7 +24,7 @@ export function getSessionCookieOptions(isProduction: boolean) {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'strict' as const,
-    maxAge: 3600 * 12,
+    maxAge: 3600 * 2, // Match JWT TTL (2 hours)
   };
 }
 
