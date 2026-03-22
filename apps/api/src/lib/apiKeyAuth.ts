@@ -68,7 +68,7 @@ export async function apiKeyAuthHandler(request: FastifyRequest, reply: FastifyR
   (request as any).apiKeyUser = {
     userId: apiKey.userId,
     organizationId: apiKey.organizationId,
-    scopes: apiKey.scopes,
+    scopes: parseScopes(apiKey.scopes),
     apiKeyId: apiKey.id,
   };
 
@@ -77,6 +77,43 @@ export async function apiKeyAuthHandler(request: FastifyRequest, reply: FastifyR
     userId: apiKey.userId,
     role: 'CUSTOMER',
     accountStatus: 'ACTIVE',
+  };
+}
+
+/**
+ * Parse scope string into a Set. Supports "*" (all) or comma-separated values.
+ */
+function parseScopes(scopeStr: string): Set<string> {
+  if (!scopeStr || scopeStr.trim() === '*') return new Set(['*']);
+  return new Set(scopeStr.split(',').map(s => s.trim()).filter(Boolean));
+}
+
+/**
+ * Check if request has the required scope.
+ * Wildcard "*" grants all scopes. JWT session auth (no apiKeyUser) is always allowed.
+ */
+function hasScope(request: FastifyRequest, scope: string): boolean {
+  const apiKeyUser = (request as any).apiKeyUser;
+  // JWT session auth — no scope restriction
+  if (!apiKeyUser) return true;
+  const scopes: Set<string> = apiKeyUser.scopes;
+  return scopes.has('*') || scopes.has(scope);
+}
+
+/**
+ * Returns a preHandler that enforces the given scope on API key requests.
+ * Usage: { preHandler: [dualAuth, requireScope('workspaces:write')] }
+ */
+export function requireScope(scope: string) {
+  return async function scopeHandler(request: FastifyRequest, reply: FastifyReply) {
+    if (!hasScope(request, scope)) {
+      return reply.status(403).send({
+        errorCode: 'INSUFFICIENT_SCOPE',
+        message: `This API key does not have the required scope: ${scope}`,
+        error: `This API key does not have the required scope: ${scope}`,
+        requestId: request.id,
+      });
+    }
   };
 }
 

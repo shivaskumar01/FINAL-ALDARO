@@ -9,7 +9,10 @@ const bannerSchema = z.object({
   message: z.string().max(120).optional().nullable(),
   severity: z.enum(['INFO', 'WARNING', 'CRITICAL']),
   linkText: z.string().optional().nullable(),
-  linkUrl: z.string().optional().nullable(),
+  linkUrl: z.string().url().optional().nullable().refine(
+    (val) => !val || /^https?:\/\//i.test(val),
+    { message: 'linkUrl must be an HTTP or HTTPS URL' }
+  ),
   startAt: z.string().datetime().optional().nullable(),
   endAt: z.string().datetime().optional().nullable(),
 });
