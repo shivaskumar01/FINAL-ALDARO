@@ -24,12 +24,17 @@
     "db:reset": "npm run prisma:reset -w @aldaro/db",
     "audit": "npm audit --audit-level=high"
   },
+  "overrides": {
+    "serialize-javascript": "^7.0.4",
+    "diff": "^8.0.3",
+    "fast-jwt": "^5.0.6"
+  },
   "devDependencies": {
     "@types/chai": "^5.2.0",
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.0.0",
     "chai": "^4.3.0",
-    "mocha": "^10.2.0",
+    "mocha": "^11.7.5",
     "ts-node": "^10.9.0",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0"
