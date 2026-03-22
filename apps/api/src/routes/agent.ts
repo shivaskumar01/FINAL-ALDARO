@@ -11,10 +11,23 @@ const verifySignature = (body: string, signature: string, secret: string) => {
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
 };
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
+  const secret = process.env.ALDARO_AGENT_SHARED_SECRET || '';
+
+  if (IS_PRODUCTION && !secret) {
+    throw new Error('FATAL: ALDARO_AGENT_SHARED_SECRET is required in production');
+  }
+
   fastify.addHook('preHandler', async (request, reply) => {
     const signature = request.headers['x-aldaro-signature'] as string;
-    const secret = process.env.ALDARO_AGENT_SHARED_SECRET || '';
+
+    if (!secret) {
+      // In dev without a secret, reject with a warning rather than silently accept
+      fastify.log.warn('Agent route called without ALDARO_AGENT_SHARED_SECRET configured');
+      return reply.status(401).send({ error: 'Agent shared secret not configured' });
+    }
 
     if (!signature || !verifySignature(JSON.stringify(request.body), signature, secret)) {
       return reply.status(401).send({ error: 'Unauthorized signature' });

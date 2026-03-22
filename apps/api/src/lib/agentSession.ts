@@ -1,8 +1,6 @@
 import crypto from 'crypto';
 import { FastifyInstance } from 'fastify';
 
-const DEV_AGENT_SHARED_SECRET = 'dev-agent-shared-secret';
-
 export type AgentSessionTokenPayload = {
   kind: 'agent-session';
   runId: string;
@@ -10,9 +8,22 @@ export type AgentSessionTokenPayload = {
   jti: string;
 };
 
-export function getAgentSharedSecret() {
-  return process.env.ALDARO_AGENT_SHARED_SECRET || DEV_AGENT_SHARED_SECRET;
+export function getAgentSharedSecret(): string {
+  const secret = process.env.ALDARO_AGENT_SHARED_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: ALDARO_AGENT_SHARED_SECRET is required in production');
+    }
+    // In dev, generate a random per-process secret so agents must use real bootstrap flow
+    if (!_devSecret) {
+      _devSecret = crypto.randomBytes(32).toString('hex');
+      console.warn('[AgentSession] No ALDARO_AGENT_SHARED_SECRET set — using random per-process dev secret');
+    }
+    return _devSecret;
+  }
+  return secret;
 }
+let _devSecret: string | null = null;
 
 export function extractBearerToken(value: string | string[] | undefined) {
   if (!value || Array.isArray(value)) return null;
