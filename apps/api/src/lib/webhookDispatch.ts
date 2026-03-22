@@ -89,8 +89,14 @@ export async function dispatchWebhook(
 
   // Filter to endpoints subscribed to this event type
   const matchingEndpoints = endpoints.filter((ep) => {
-    const subscribedEvents: string[] = JSON.parse(ep.events);
-    return subscribedEvents.includes('*') || subscribedEvents.includes(event);
+    try {
+      const subscribedEvents: string[] = JSON.parse(ep.events);
+      if (!Array.isArray(subscribedEvents)) return false;
+      return subscribedEvents.includes('*') || subscribedEvents.includes(event);
+    } catch {
+      console.error(`[Webhook] Malformed events JSON for endpoint ${ep.id}`);
+      return false;
+    }
   });
 
   if (matchingEndpoints.length === 0) return;

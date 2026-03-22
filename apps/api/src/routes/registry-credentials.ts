@@ -40,7 +40,11 @@ const createCredentialSchema = z.object({
 function getEncryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
   if (!key || key.length < 32) {
-    throw new Error('ENCRYPTION_KEY must be at least 32 characters');
+    throw new Error('ENCRYPTION_KEY must be at least 32 characters (use a cryptographically random string)');
+  }
+  // Entropy check: reject obviously weak keys
+  if (/^(.)\1+$/.test(key) || key === 'a'.repeat(key.length)) {
+    throw new Error('ENCRYPTION_KEY is too weak — use a cryptographically random string');
   }
   // Derive a consistent 32-byte key via SHA-256
   return crypto.createHash('sha256').update(key).digest();

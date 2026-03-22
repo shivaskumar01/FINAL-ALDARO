@@ -67,9 +67,22 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   // -------------------------------------------------------------------------
   // POST /webhooks — Create a webhook endpoint
   // -------------------------------------------------------------------------
-  fastify.post('/', async (request: any, reply) => {
+  fastify.post('/', {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, async (request: any, reply) => {
     const userId = request.user.userId;
     const body = createWebhookSchema.parse(request.body);
+
+    // Limit webhooks per user (max 10)
+    const existingCount = await prisma.webhookEndpoint.count({ where: { userId } });
+    if (existingCount >= 10) {
+      return reply.status(429).send({
+        errorCode: 'MAX_WEBHOOKS_REACHED',
+        message: 'Maximum of 10 webhook endpoints per account.',
+        error: 'Maximum of 10 webhook endpoints per account.',
+        requestId: request.id,
+      });
+    }
 
     // SECURITY: Block SSRF — reject internal/private webhook URLs
     if (isBlockedWebhookUrl(body.url)) {

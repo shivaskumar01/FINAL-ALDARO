@@ -56,12 +56,12 @@
 			# Flush immediately for streaming/SSE (Gradio, Streamlit)
 			flush_interval -1
 
-			# Timeouts for long-running ML workloads
+			# Timeouts: generous for ML workloads but not unlimited (DoS prevention)
 			transport http {
 				dial_timeout 10s
-				response_header_timeout 0
-				read_timeout 0
-				write_timeout 0
+				response_header_timeout 300s
+				read_timeout 3600s
+				write_timeout 3600s
 			}
 		}
 	}

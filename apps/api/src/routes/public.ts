@@ -98,7 +98,8 @@ export const publicRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
   fastify.post('/cli/track-click', async (request: any) => {
     // Analytics tracking for CLI interest
-    console.log(`[ANALYTICS] CLI Install Clicked from IP: ${request.ip}`);
+    // SECURITY: Do not log raw IP addresses (PII)
+    console.log('[ANALYTICS] CLI Install Clicked');
     return { ok: true };
   });
 

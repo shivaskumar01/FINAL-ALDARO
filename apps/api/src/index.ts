@@ -620,10 +620,9 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
     timestamp: new Date().toISOString(),
     event: 'unhandled_rejection',
     error: reason?.message || String(reason),
-    stack: reason?.stack,
+    // SECURITY: Only include stack traces in non-production to prevent info leakage
+    ...(process.env.NODE_ENV !== 'production' && { stack: reason?.stack }),
   }));
-  // Terminate: unhandled rejections indicate broken control flow.
-  // Fastify will drain connections during shutdown.
   process.exit(1);
 });
 
@@ -635,9 +634,8 @@ process.on('uncaughtException', (err: Error) => {
     timestamp: new Date().toISOString(),
     event: 'uncaught_exception',
     error: err.message,
-    stack: err.stack,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
   }));
-  // Terminate immediately: process state is unreliable after uncaught exception.
   process.exit(1);
 });
 

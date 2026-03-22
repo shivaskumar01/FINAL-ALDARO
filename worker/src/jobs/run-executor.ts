@@ -265,8 +265,14 @@ export async function initializeRun(prisma: PrismaClient, run: any, workspace: a
     max_seconds: run.hoursMax * 3600,
   };
 
+  // SECURITY: Validate VM IP is in the expected workspace subnet
+  const vmSubnet = process.env.VM_SUBNET || '10.10.';
+  if (!workspace.vmInternalIp.startsWith(vmSubnet)) {
+    throw new Error(`VM IP ${workspace.vmInternalIp} is not in allowed subnet — possible SSRF`);
+  }
+
   const agentUrl = `http://${workspace.vmInternalIp}:${AGENT_PORT}/execute`;
-  console.log(`[RunExecutor] Sending execute to ${agentUrl} for run ${run.id}`);
+  console.log(`[RunExecutor] Sending execute to agent for run ${run.id}`);
 
   try {
     const response = await fetch(agentUrl, {

@@ -617,7 +617,14 @@ fastify.server.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buff
       req.headers.cookie as string | undefined,
       req.headers.authorization as string | undefined,
     );
-    if (!token || !verifyJwt(token).valid) {
+    if (!token) {
+      console.warn(`[GATEWAY] WebSocket upgrade denied: no auth token for ${subdomain} from ${req.socket.remoteAddress}`);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    if (!verifyJwt(token).valid) {
+      console.warn(`[GATEWAY] WebSocket upgrade denied: invalid/expired token for ${subdomain} from ${req.socket.remoteAddress}`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -682,7 +689,7 @@ process.on('unhandledRejection', (reason: any) => {
     timestamp: new Date().toISOString(),
     event: 'unhandled_rejection',
     error: reason?.message || String(reason),
-    stack: reason?.stack,
+    ...(process.env.NODE_ENV !== 'production' && { stack: reason?.stack }),
   }));
   process.exit(1);
 });
@@ -695,7 +702,7 @@ process.on('uncaughtException', (err: Error) => {
     timestamp: new Date().toISOString(),
     event: 'uncaught_exception',
     error: err.message,
-    stack: err.stack,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
   }));
   process.exit(1);
 });

@@ -332,7 +332,8 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
     });
 
     // SECURITY: Token sent via email outbox only — never log raw tokens.
-    console.log(`[Org] Invitation created for ${body.email} to org ${org.slug}`);
+    // SECURITY: Do not log email addresses (PII)
+    console.log(`[Org] Invitation created for org ${org.slug}`);
 
     return reply.status(201).send({
       ok: true,
