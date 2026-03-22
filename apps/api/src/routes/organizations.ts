@@ -557,9 +557,25 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
       });
     }
 
-    await prisma.orgMembership.update({
-      where: { id: targetMembership.id },
-      data: { status: 'REMOVED' },
+    // Get the user's email to invalidate any pending invitations
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { email: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.orgMembership.update({
+        where: { id: targetMembership.id },
+        data: { status: 'REMOVED' },
+      });
+
+      // Invalidate any pending invitations for this user to prevent re-join via old token
+      if (targetUser?.email) {
+        await tx.orgInvitation.updateMany({
+          where: { orgId: id, email: targetUser.email, acceptedAt: null },
+          data: { expiresAt: new Date() },
+        });
+      }
     });
 
     return { ok: true, message: 'Member removed from organization.' };

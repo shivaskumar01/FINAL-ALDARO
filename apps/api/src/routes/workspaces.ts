@@ -7,6 +7,28 @@ import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
+// Allowlist of trusted container registries. Images without a registry prefix
+// are assumed to be Docker Hub (docker.io). Add internal registries as needed.
+const ALLOWED_REGISTRIES = new Set([
+  'docker.io',
+  'ghcr.io',
+  'nvcr.io',           // NVIDIA NGC
+  'registry.aldaro.ai', // Aldaro internal
+]);
+
+function isAllowedImage(image: string): boolean {
+  // Strip tag/digest
+  const ref = image.split('@')[0].split(':')[0];
+  const parts = ref.split('/');
+  // "ubuntu" or "library/ubuntu" → Docker Hub (allowed)
+  if (parts.length <= 2 && !parts[0].includes('.')) {
+    return ALLOWED_REGISTRIES.has('docker.io');
+  }
+  // "ghcr.io/owner/repo" → registry is first segment
+  const registry = parts[0].toLowerCase();
+  return ALLOWED_REGISTRIES.has(registry);
+}
+
 const launchSchema = z.object({
   gpu_type: z.string().optional(),
   gpu_key: z.string().optional(),
@@ -59,6 +81,15 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         errorCode: 'IDEMPOTENCY_KEY_REQUIRED',
         message: 'idempotency_key (or intent) is required.',
         error: 'idempotency_key (or intent) is required.',
+        requestId: request.id,
+      });
+    }
+
+    if (custom_image && !isAllowedImage(custom_image)) {
+      return reply.status(400).send({
+        errorCode: 'UNTRUSTED_REGISTRY',
+        message: 'Custom image must be from an approved container registry.',
+        error: 'Custom image must be from an approved container registry.',
         requestId: request.id,
       });
     }
