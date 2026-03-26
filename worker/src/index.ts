@@ -71,6 +71,7 @@ async function main() {
     'PROXMOX_API_TOKEN_SECRET',
     'ALDARO_AGENT_SHARED_SECRET',
     'ENCRYPTION_KEY',
+    'GATEWAY_SERVICE_SECRET',
   ];
 
   const missing = requiredEnv.filter(k => !process.env[k]);
@@ -103,6 +104,9 @@ async function main() {
   console.log(`Incident detection tick interval: ${INCIDENT_TICK_MS}ms`);
 }
 
+const MAX_LEADER_RETRIES = 60; // ~5 min with backoff before giving up
+let leaderRetryCount = 0;
+
 /**
  * Acquire the leader lock using Postgres advisory lock
  * This ensures only one worker can be the leader at a time
@@ -113,11 +117,12 @@ async function acquireLeaderLock(): Promise<void> {
     const result = await prisma.$queryRaw<{ acquired: boolean }[]>`
       SELECT pg_try_advisory_lock(${LEADER_LOCK_ID}) as acquired
     `;
-    
+
     if (result[0]?.acquired) {
       isLeader = true;
+      leaderRetryCount = 0;
       currentFencingToken = crypto.randomUUID();
-      
+
       // Update leader record in DB
       await prisma.workerLeader.upsert({
         where: { id: 1 },
@@ -135,17 +140,27 @@ async function acquireLeaderLock(): Promise<void> {
           lastTickAt: new Date(),
         },
       });
-      
+
       console.log(`✓ Acquired leader lock (fencing token: ${currentFencingToken.slice(0, 8)}...)`);
     } else {
-      console.log('Another worker is the leader. Waiting...');
-      
-      // Wait and retry
-      setTimeout(acquireLeaderLock, 5000);
+      leaderRetryCount++;
+      if (leaderRetryCount >= MAX_LEADER_RETRIES) {
+        console.error(`[Worker] Failed to acquire leader lock after ${MAX_LEADER_RETRIES} attempts. Exiting.`);
+        process.exit(1);
+      }
+      const backoffMs = Math.min(5000 * Math.pow(1.2, Math.min(leaderRetryCount, 20)), 30000);
+      console.log(`Another worker is the leader. Retry ${leaderRetryCount}/${MAX_LEADER_RETRIES} in ${Math.round(backoffMs)}ms...`);
+      setTimeout(acquireLeaderLock, backoffMs);
     }
   } catch (err) {
-    console.error('Failed to acquire leader lock:', err);
-    setTimeout(acquireLeaderLock, 5000);
+    leaderRetryCount++;
+    if (leaderRetryCount >= MAX_LEADER_RETRIES) {
+      console.error(`[Worker] Leader lock error after ${MAX_LEADER_RETRIES} attempts. Exiting.`, err);
+      process.exit(1);
+    }
+    const backoffMs = Math.min(5000 * Math.pow(1.2, Math.min(leaderRetryCount, 20)), 30000);
+    console.error(`Failed to acquire leader lock (retry ${leaderRetryCount}/${MAX_LEADER_RETRIES}):`, err);
+    setTimeout(acquireLeaderLock, backoffMs);
   }
 }
 
@@ -392,6 +407,9 @@ async function incidentDetectionTick() {
 
   // Check metering emission failures
   await checkMeteringFailures();
+
+  // Check email outbox dead-letter accumulation
+  await checkEmailOutboxFailures();
 }
 
 async function checkProvisionFailures() {
@@ -582,6 +600,23 @@ async function checkMeteringFailures() {
     });
   } else {
     await resolveIncident('billing_meter_emit_failed');
+  }
+}
+
+async function checkEmailOutboxFailures() {
+  const failed = await prisma.emailOutbox.count({
+    where: { status: 'FAILED' },
+  });
+
+  if (failed > 0) {
+    await upsertIncident({
+      type: 'email_outbox_failures',
+      severity: failed >= 10 ? 'HIGH' : 'MEDIUM',
+      title: 'Email outbox delivery failures',
+      description: `${failed} email(s) exhausted all retry attempts`,
+    });
+  } else {
+    await resolveIncident('email_outbox_failures');
   }
 }
 

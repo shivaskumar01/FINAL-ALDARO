@@ -86,7 +86,26 @@ async function releaseCloneSemaphore(prisma: PrismaClient, workspaceId: string):
   });
 }
 
+const CLONE_SEMAPHORE_TIMEOUT_MS = 15 * 60_000; // 15 minutes — clones should never take this long
+
+/**
+ * Release orphaned clone semaphores that have been held longer than the timeout.
+ * Prevents deadlock if a clone crashes without releasing its semaphore.
+ */
+async function cleanupOrphanedSemaphores(prisma: PrismaClient): Promise<void> {
+  const cutoff = new Date(Date.now() - CLONE_SEMAPHORE_TIMEOUT_MS);
+  const { count } = await prisma.cloneSemaphore.updateMany({
+    where: { releasedAt: null, acquiredAt: { lt: cutoff } },
+    data: { releasedAt: new Date() },
+  });
+  if (count > 0) {
+    console.warn(`[WarmPool] Released ${count} orphaned clone semaphore(s) older than ${CLONE_SEMAPHORE_TIMEOUT_MS / 60_000}min`);
+  }
+}
+
 export async function warmPoolTick(prisma: PrismaClient) {
+  // Clean up orphaned semaphores before checking capacity
+  await cleanupOrphanedSemaphores(prisma);
   const configs = await prisma.warmPoolConfig.findMany();
 
   for (const cfg of configs) {
@@ -223,23 +242,36 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
 
   console.log(`[WarmPool] Created workspace ${workspaceId} (vmid ${newVmid}, name ${vmName})`);
 
-  // 4. Allocate GPU (atomic: both GPU status + allocation record)
-  await prisma.$transaction([
-    prisma.fleetGpu.update({
-      where: { id: gpu.id },
-      data: {
-        status: 'ALLOCATED',
-        currentWorkspaceId: workspaceId,
-      },
-    }),
-    prisma.workspaceGpuAllocation.create({
-      data: {
-        workspaceId,
-        gpuId: gpu.id,
-        nodeId: gpu.nodeId,
-      },
-    }),
-  ]);
+  // 4. Allocate GPU with optimistic lock to prevent double-allocation
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Optimistic lock: only allocate if GPU is still FREE
+      const claimed = await tx.fleetGpu.updateMany({
+        where: { id: gpu.id, status: 'FREE' },
+        data: {
+          status: 'ALLOCATED',
+          currentWorkspaceId: workspaceId,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new Error('GPU_ALREADY_CLAIMED');
+      }
+      await tx.workspaceGpuAllocation.create({
+        data: {
+          workspaceId,
+          gpuId: gpu.id,
+          nodeId: gpu.nodeId,
+        },
+      });
+    });
+  } catch (err: any) {
+    if (err.message === 'GPU_ALREADY_CLAIMED') {
+      console.log(`[WarmPool] GPU ${gpu.id} was claimed by another provision, cleaning up workspace ${workspaceId}`);
+      await prisma.workspace.delete({ where: { id: workspaceId } });
+      return;
+    }
+    throw err;
+  }
 
   // 5. Acquire clone semaphore (prevents storage array DoS from concurrent clones)
   const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, workspaceId);
@@ -456,23 +488,36 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
     },
   });
 
-  // Allocate GPU (atomic: both GPU status + allocation record)
-  await prisma.$transaction([
-    prisma.fleetGpu.update({
-      where: { id: gpu.id },
-      data: {
-        status: 'ALLOCATED',
-        currentWorkspaceId: ws.id,
-      },
-    }),
-    prisma.workspaceGpuAllocation.create({
-      data: {
-        workspaceId: ws.id,
-        gpuId: gpu.id,
-        nodeId: gpu.nodeId,
-      },
-    }),
-  ]);
+  // Allocate GPU with optimistic lock to prevent double-allocation
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Optimistic lock: only allocate if GPU is still FREE
+      const claimed = await tx.fleetGpu.updateMany({
+        where: { id: gpu.id, status: 'FREE' },
+        data: {
+          status: 'ALLOCATED',
+          currentWorkspaceId: ws.id,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new Error('GPU_ALREADY_CLAIMED');
+      }
+      await tx.workspaceGpuAllocation.create({
+        data: {
+          workspaceId: ws.id,
+          gpuId: gpu.id,
+          nodeId: gpu.nodeId,
+        },
+      });
+    });
+  } catch (err: any) {
+    if (err.message === 'GPU_ALREADY_CLAIMED') {
+      console.log(`[WarmPool] GPU ${gpu.id} was claimed by another provision, deferring workspace ${ws.id}`);
+      await prisma.workspace.update({ where: { id: ws.id }, data: { proxmoxNode: null, proxmoxVmid: null } });
+      return;
+    }
+    throw err;
+  }
 
   // Acquire clone semaphore
   const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, ws.id);
@@ -1025,10 +1070,13 @@ function mapGpuType(gpuType: string): string {
 }
 
 async function getNextVmid(prisma: PrismaClient, node: string): Promise<number> {
-  const lastWorkspace = await prisma.workspace.findFirst({
-    where: { proxmoxNode: node, proxmoxVmid: { not: null } },
-    orderBy: { proxmoxVmid: 'desc' },
-  });
-
-  return (lastWorkspace?.proxmoxVmid || 999) + 1;
+  // Use an interactive transaction to atomically find and reserve the next VMID.
+  // The transaction's isolation prevents two concurrent callers from getting the same ID.
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.workspace.aggregate({
+      where: { proxmoxNode: node, proxmoxVmid: { not: null } },
+      _max: { proxmoxVmid: true },
+    });
+    return (result._max.proxmoxVmid || 999) + 1;
+  }, { isolationLevel: 'Serializable' });
 }

@@ -1,11 +1,37 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import dns from 'dns/promises';
 import { decryptSecret } from './encryption';
 
 const prisma = new PrismaClient();
 
 const MAX_RETRY_ATTEMPTS = 3;
 const MAX_CONSECUTIVE_FAILURES = 10;
+
+/**
+ * SECURITY: Resolve hostname and validate the IP is not internal/private.
+ * This prevents DNS rebinding attacks where a hostname resolves to an
+ * internal IP at delivery time (after passing the creation-time check).
+ */
+async function isBlockedResolvedIp(hostname: string): Promise<boolean> {
+  try {
+    const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+    const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
+    const all = [...addresses, ...addresses6];
+    if (all.length === 0) return false; // Let fetch handle DNS failure
+    for (const ip of all) {
+      if (ip === '127.0.0.1' || ip === '::1' || ip === '0.0.0.0') return true;
+      if (/^10\./.test(ip)) return true;
+      if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip)) return true;
+      if (/^192\.168\./.test(ip)) return true;
+      if (/^169\.254\./.test(ip)) return true;
+      if (ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
+    }
+    return false;
+  } catch {
+    return false; // DNS resolution failure — let fetch handle it
+  }
+}
 
 /**
  * Compute HMAC-SHA256 signature for a webhook payload.
@@ -139,6 +165,26 @@ async function deliverToEndpoint(
   let lastError: Error | null = null;
   let lastStatus: number | null = null;
   let lastBody: string | null = null;
+
+  // SECURITY: Re-validate destination IP at delivery time to prevent DNS rebinding.
+  // The URL was checked at creation, but DNS could have changed since then.
+  try {
+    const hostname = new URL(endpoint.url).hostname;
+    if (await isBlockedResolvedIp(hostname)) {
+      console.error(`[Webhook] SSRF blocked: ${endpoint.id} resolved to internal IP`);
+      await prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'FAILED',
+          responseBody: 'SSRF: destination resolved to blocked IP range',
+          attemptCount: 1,
+        },
+      });
+      return;
+    }
+  } catch {
+    // URL parse failure — will be caught by fetch below
+  }
 
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {

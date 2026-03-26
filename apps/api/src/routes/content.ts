@@ -13,12 +13,14 @@ export const publicContentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
   });
 
   fastify.get('/changelog', async (request: any) => {
-    const { page = 1, limit = 20 } = request.query as any;
+    const { page: rawPage = '1', limit: rawLimit = '20' } = request.query as any;
+    const page = Math.max(1, Math.min(parseInt(rawPage, 10) || 1, 200));
+    const limit = Math.max(1, Math.min(parseInt(rawLimit, 10) || 20, 50));
     return prisma.authorPost.findMany({
       where: { visibility: 'CHANGELOG', status: 'PUBLISHED' },
       orderBy: { publishedAt: 'desc' },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
+      take: limit,
     });
   });
 

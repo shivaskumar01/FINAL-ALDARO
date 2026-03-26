@@ -125,7 +125,9 @@ export const publicRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       return reply.status(400).send({ error: PASSWORD_REQUIREMENTS_MSG });
     }
 
-    if (email === 'shivas@aldaro.ai') {
+    // SECURITY: Block author/admin accounts from being created via public signup
+    const blockedEmails = (process.env.BLOCKED_SIGNUP_EMAILS || 'shivas@aldaro.ai').split(',').map(e => e.trim().toLowerCase());
+    if (blockedEmails.includes(email)) {
       await logSecurityEvent(request, null, SecurityEventType.LOGIN_FAILURE, { email, reason: 'AUTHOR_SIGNUP_ATTEMPT' });
       return reply.status(400).send({ error: 'Invalid credentials.' });
     }

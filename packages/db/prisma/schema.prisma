@@ -88,6 +88,7 @@ model User {
   hardLimitAction           String    @default("ALERT") // ALERT | AUTO_TERMINATE
   lastBudgetAlertAt         DateTime?
 
+  @@index([passwordResetTokenHash])
   @@map("users")
 }
 
@@ -134,6 +135,7 @@ model EmailOutbox {
   status            String    @default("PENDING") // PENDING | SENDING | SENT | FAILED
   attemptCount      Int       @default(0)
   lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?
   sentAt            DateTime?
   providerMessageId String?
   dedupeKey         String    @unique
@@ -144,6 +146,7 @@ model EmailOutbox {
   recipient   User?                @relation("EmailOutboxRecipient", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status])
+  @@index([status, nextAttemptAt])
   @@index([type])
   @@map("email_outbox")
 }
@@ -288,7 +291,7 @@ model RunEvent {
   payload   String
   createdAt DateTime @default(now())
 
-  run Run @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@map("run_events")
@@ -302,7 +305,7 @@ model RunLog {
   seq       Int
   createdAt DateTime @default(now())
 
-  run Run @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@index([seq])
@@ -320,7 +323,7 @@ model Artifact {
   downloadUrl String?
   createdAt   DateTime @default(now())
 
-  run Run @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@map("artifacts")
@@ -337,7 +340,7 @@ model AgentSession {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  run Run @relation(fields: [runId], references: [id])
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@map("agent_sessions")

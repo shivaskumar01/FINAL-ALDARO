@@ -9,9 +9,13 @@ const STALE_TERMINATING_MS = 10 * 60_000;
 const STALE_CREATING_MS = 15 * 60_000;
 
 function nextCleanupBackoff(attemptCount: number): number {
-  if (attemptCount <= 0) return CLEANUP_BACKOFF_MS[0];
-  if (attemptCount - 1 >= CLEANUP_BACKOFF_MS.length) return CLEANUP_BACKOFF_MS[CLEANUP_BACKOFF_MS.length - 1];
-  return CLEANUP_BACKOFF_MS[attemptCount - 1];
+  let base: number;
+  if (attemptCount <= 0) base = CLEANUP_BACKOFF_MS[0];
+  else if (attemptCount - 1 >= CLEANUP_BACKOFF_MS.length) base = CLEANUP_BACKOFF_MS[CLEANUP_BACKOFF_MS.length - 1];
+  else base = CLEANUP_BACKOFF_MS[attemptCount - 1];
+  // Add ±10% jitter to prevent thundering herd when multiple jobs fail simultaneously
+  const jitter = base * 0.1 * (Math.random() * 2 - 1);
+  return Math.round(base + jitter);
 }
 
 function errorDetails(err: any) {
@@ -249,7 +253,7 @@ async function processCleanupJob(prisma: PrismaClient, job: WorkspaceCleanupJob)
       where: {
         workspaceId: ws.id,
         status: 'ENDED',
-        outboxEntry: { is: null },
+        meterOutbox: { is: null },
       },
     });
     if (endedWithoutOutbox > 0) {

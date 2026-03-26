@@ -25,7 +25,7 @@ import { userRoutes } from './routes/users';
 import { publicRoutes } from './routes/public';
 import { resolveCustomerAccessStatus } from './lib/customerAccess';
 import { logSecurityEvent, SecurityEventType } from './lib/security';
-import { buildPasswordVersion, SESSION_COOKIE_NAME } from './lib/session';
+import { SESSION_COOKIE_NAME } from './lib/session';
 import { ALDARO_VERSION } from './version';
 
 import { projectRoutes } from './routes/v1/projects';
@@ -63,6 +63,8 @@ if (isProduction) {
     'GATEWAY_SERVICE_SECRET',
     'ENCRYPTION_KEY',
     'DATABASE_URL',
+    'STRIPE_SECRET_KEY',
+    'STRIPE_WEBHOOK_SECRET',
   ];
   
   const missing = requiredSecrets.filter(k => !process.env[k]);
@@ -124,15 +126,23 @@ fastify.addHook('onSend', async (request, reply, payload) => {
   return payload;
 });
 
+// SECURITY: Allowed dev origins — explicit list, not wildcard prefix matching
+const DEV_ALLOWED_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+]);
+
 fastify.register(cors, {
   origin: (origin, cb) => {
-    // In development: allow any localhost/127.0.0.1 port and reflect origin so browser accepts response
+    // In development: allow only known dev origins (not any localhost port)
     if (!isProduction) {
-      if (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      if (!origin || DEV_ALLOWED_ORIGINS.has(origin)) {
         return cb(null, origin || 'http://localhost:3000');
       }
     }
-    
+
     // In production, only allow configured origin
     if (origin === process.env.APP_BASE_URL) {
       return cb(null, true);
@@ -188,7 +198,11 @@ if (!jwtSecret || !cookieSecret) {
 fastify.register(jwt, {
   secret: jwtSecret,
   sign: {
-    expiresIn: '2h',
+    algorithm: 'HS256',
+    expiresIn: '15m',
+  },
+  verify: {
+    algorithms: ['HS256'],
   },
 });
 
@@ -213,6 +227,7 @@ fastify.register(csrf, {
 
 function isCsrfExemptPath(pathname: string): boolean {
   if (pathname === '/billing/webhook') return true;
+  if (pathname === '/auth/refresh') return true; // Protected by sameSite:strict refresh cookie + CORS
   if (pathname.startsWith('/internal/')) return true;
   if (pathname.startsWith('/v1/agent')) return true;
   if (/^\/v1\/runs\/[^/]+\/events$/.test(pathname)) return true;
@@ -270,6 +285,12 @@ fastify.addHook('preHandler', async (request: any, reply: any) => {
 });
 
 // Auth middleware
+// SECURITY: Stateless JWT verification only — no DB lookup per request.
+// Access tokens are short-lived (15 min). User status (ACTIVE/BLOCKED)
+// and password validity are verified on token refresh (/auth/refresh).
+// A blocked user is forcibly logged out within at most 15 minutes.
+// Defense-in-depth: requireAuthor/requireCustomerApproved still do DB checks
+// on their respective sensitive routes.
 fastify.decorate('authenticate', async (request: any, reply: any) => {
   try {
     const token = getRequestSessionToken(request);
@@ -289,34 +310,13 @@ fastify.decorate('authenticate', async (request: any, reply: any) => {
     }
 
     const decoded = fastify.jwt.verify(token) as any;
-    const dbUser = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, role: true, accountStatus: true, passwordHash: true },
-    });
-
-    if (!dbUser || dbUser.accountStatus !== 'ACTIVE') {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
-    if (!decoded?.pwdv || decoded.pwdv !== buildPasswordVersion(dbUser.passwordHash)) {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
-    if (dbUser.role !== decoded.role) {
-      await logSecurityEvent(request, decoded.userId || null, SecurityEventType.ROLE_GATED_ACCESS, {
-        path: request.url,
-        reason: 'jwt_db_role_mismatch',
-        jwtRole: decoded.role,
-        dbRole: dbUser.role,
-      });
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
 
     request.user = {
-      userId: dbUser.id,
-      role: dbUser.role,
-      accountStatus: dbUser.accountStatus,
+      userId: decoded.userId,
+      role: decoded.role,
+      accountStatus: 'ACTIVE', // Trusted for 15-min token window; verified on refresh
       jti: decoded?.jti ?? null,
+      iat: decoded.iat, // Required by requireReauth temporal ordering check
     };
   } catch (err) {
     return reply.status(401).send({ error: 'Unauthorized' });

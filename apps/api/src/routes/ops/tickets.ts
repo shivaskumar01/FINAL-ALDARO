@@ -120,7 +120,8 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         }
       } catch (err: any) {
         console.error(`[OPS] Stripe refund failed for ticket ${id}:`, err.message);
-        return reply.status(502).send({ error: 'Stripe refund failed', detail: err.message });
+        // SECURITY: Do not leak Stripe error details to the client
+        return reply.status(502).send({ error: 'Stripe refund failed. Check server logs for details.' });
       }
     } else {
       console.warn(`[OPS] STRIPE_SECRET_KEY not set — recording refund locally only`);

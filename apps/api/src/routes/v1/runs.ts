@@ -147,17 +147,18 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
   fastify.get('/projects/:project_id/runs', { preHandler: [fastify.authenticate as any, fastify.requireCustomerApproved as any] }, async (request: any) => {
     const userId = request.user.userId;
     const { project_id } = request.params;
-    const { limit = 20, cursor } = request.query as any;
+    const { limit = '20', cursor } = request.query as any;
+    const clampedLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
 
     const items = await prisma.run.findMany({
       where: { projectId: project_id, userId },
-      take: parseInt(limit),
+      take: clampedLimit,
       skip: cursor ? 1 : 0,
       cursor: cursor ? { id: cursor } : undefined,
       orderBy: { createdAt: 'desc' },
     });
 
-    const next_cursor = items.length === parseInt(limit) ? items[items.length - 1].id : null;
+    const next_cursor = items.length === clampedLimit ? items[items.length - 1].id : null;
 
     return { items, next_cursor };
   });
@@ -337,13 +338,24 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       exit_code: run.exitCode,
       // API3: Redact sensitive event data
       events: run.events.map(e => {
-        const payload = JSON.parse(e.payload);
+        let payload: any = {};
+        try {
+          payload = JSON.parse(e.payload);
+        } catch {
+          payload = { _raw: '[invalid JSON]' };
+        }
         // Redact secrets/tokens if they exist in payload
         if (payload.token) payload.token = '[REDACTED]';
         if (payload.secret) payload.secret = '[REDACTED]';
         return { type: e.type, time: e.createdAt, payload };
       }),
-      agent_sessions: run.agentSessions.map(s => ({ version: s.agentVersion, caps: s.capabilitiesJson ? JSON.parse(s.capabilitiesJson) : null })),
+      agent_sessions: run.agentSessions.map(s => {
+        let caps: any = null;
+        if (s.capabilitiesJson) {
+          try { caps = JSON.parse(s.capabilitiesJson); } catch { caps = null; }
+        }
+        return { version: s.agentVersion, caps };
+      }),
       log_transcript: logs.map(l => `[${l.stream}] ${l.line}`).join('\n'),
     };
 
@@ -361,6 +373,44 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
 
     if (!oldRun) {
       return reply.status(404).send({ error: 'Run not found' });
+    }
+
+    // SECURITY: Enforce same limits as run creation
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { maxConcurrentRuns: true, dailySpendLimitSeconds: true },
+    });
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
+    const activeRuns = await prisma.run.count({
+      where: {
+        userId,
+        status: { in: ['provisioning', 'initializing', 'running', 'uploading_artifacts'] },
+      },
+    });
+
+    if (activeRuns >= user.maxConcurrentRuns) {
+      return reply.status(429).send({
+        error: 'Concurrency limit reached',
+        message: `You have ${activeRuns} active runs. Maximum allowed is ${user.maxConcurrentRuns}.`
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayBilled = await prisma.run.aggregate({
+      where: { userId, createdAt: { gte: today } },
+      _sum: { billedSeconds: true },
+    });
+
+    if ((todayBilled._sum.billedSeconds || 0) >= user.dailySpendLimitSeconds) {
+      return reply.status(429).send({
+        error: 'Daily limit reached',
+        message: 'You have reached your daily GPU runtime limit.',
+      });
     }
 
     // Create a new run with same config
@@ -383,7 +433,7 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
         runId: newRun.id,
         gpuType: newRun.gpuType,
         gpuCount: newRun.gpuCount,
-        env: newRun.envJson ? JSON.parse(newRun.envJson) : undefined,
+        env: newRun.envJson ? (() => { try { return JSON.parse(newRun.envJson); } catch { return undefined; } })() : undefined,
       });
 
       const updatedRun = await prisma.run.update({
@@ -452,17 +502,39 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     // Handle specific event types to update Run status
     if (body.type === 'STATUS') {
       const state = body.payload.state;
+
+      // SECURITY: Validate state transitions to prevent billing manipulation
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        'queued': ['provisioning', 'failed', 'canceled'],
+        'provisioning': ['initializing', 'failed', 'canceled'],
+        'initializing': ['running', 'failed', 'canceled'],
+        'running': ['uploading_artifacts', 'completed', 'failed', 'canceled', 'timed_out'],
+        'uploading_artifacts': ['completed', 'failed'],
+      };
+
+      const run = await prisma.run.findUnique({ where: { id: run_id }, select: { status: true, startedAt: true } });
+      if (!run) {
+        return reply.status(404).send({ error: 'Run not found' });
+      }
+
+      const allowed = VALID_TRANSITIONS[run.status];
+      if (!allowed || !allowed.includes(state)) {
+        return reply.status(400).send({
+          error: 'Invalid state transition',
+          message: `Cannot transition from '${run.status}' to '${state}'`
+        });
+      }
+
       const updateData: any = { status: state };
-      
+
       if (state === 'running') {
         updateData.startedAt = new Date();
       } else if (['completed', 'failed', 'canceled', 'timed_out'].includes(state)) {
         updateData.finishedAt = new Date();
         updateData.infraFinishedAt = new Date();
-        
+
         // Calculate billing
-        const run = await prisma.run.findUnique({ where: { id: run_id } });
-        if (run && run.startedAt) {
+        if (run.startedAt) {
           const durationSeconds = Math.ceil((new Date().getTime() - run.startedAt.getTime()) / 1000);
           updateData.billedSeconds = durationSeconds;
         }

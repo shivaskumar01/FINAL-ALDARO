@@ -241,7 +241,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       });
     }
 
-    const subdomain = `ws-${workspace.id.slice(0, 8)}-${port}`;
+    // SECURITY: Use 16 chars of workspace ID to reduce collision risk (128 bits vs 64 bits)
+    const subdomain = `ws-${workspace.id.slice(0, 16)}-${port}`;
     const publicUrl = `https://${subdomain}.aldaro.ai`;
 
     // If previously released, reactivate; otherwise create new

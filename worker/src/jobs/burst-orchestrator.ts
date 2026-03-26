@@ -15,13 +15,22 @@ import { PrismaClient } from '@prisma/client';
  */
 
 // How long to wait for a burst node to come online before timing out
-const PROVISION_TIMEOUT_MS = parseInt(process.env.BURST_PROVISION_TIMEOUT_MS || String(10 * 60 * 1000));
+const PROVISION_TIMEOUT_MS = Math.min(
+  Math.max(parseInt(process.env.BURST_PROVISION_TIMEOUT_MS || String(10 * 60 * 1000)) || 600_000, 60_000),
+  30 * 60 * 1000, // Cap at 30 minutes
+);
 
 // Minimum warm pool shortfall that triggers burst provisioning
-const BURST_THRESHOLD = parseInt(process.env.BURST_THRESHOLD || '2');
+const BURST_THRESHOLD = Math.min(
+  Math.max(parseInt(process.env.BURST_THRESHOLD || '2') || 2, 1),
+  100, // Cap at 100
+);
 
 // Maximum concurrent burst nodes
-const MAX_BURST_NODES = parseInt(process.env.MAX_BURST_NODES || '10');
+const MAX_BURST_NODES = Math.min(
+  Math.max(parseInt(process.env.MAX_BURST_NODES || '10') || 10, 1),
+  50, // Hard cap to prevent runaway provisioning
+);
 
 export async function burstOrchestratorTick(prisma: PrismaClient) {
   await checkDemandAndProvision(prisma);

@@ -66,7 +66,14 @@ export const authorPostRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
   fastify.addHook('preHandler', fastify.requireAuthor as any);
 
   fastify.get('/', async (request: any) => {
-    const { q, status, visibility, page = 1, limit = 20 } = request.query as any;
+    const querySchema = z.object({
+      q: z.string().max(200).optional(),
+      status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
+      visibility: z.enum(['IN_APP_ANNOUNCEMENT', 'CHANGELOG', 'DOC_PAGE']).optional(),
+      page: z.coerce.number().int().min(1).max(1000).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+    });
+    const { q, status, visibility, page, limit } = querySchema.parse(request.query);
     const where: any = {};
     if (q) where.title = { contains: q, mode: 'insensitive' };
     if (status) where.status = status;
@@ -76,7 +83,7 @@ export const authorPostRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
       prisma.authorPost.findMany({
         where,
         skip: (page - 1) * limit,
-        take: parseInt(limit),
+        take: limit,
         orderBy: { updatedAt: 'desc' },
       }),
       prisma.authorPost.count({ where }),

@@ -12,10 +12,15 @@ import {
 import crypto from 'crypto';
 import { resolveCustomerAccessStatus } from '../lib/customerAccess';
 import {
+  buildPasswordVersion,
+  buildRefreshToken,
   buildSessionTokenPayload,
   getRedirectForUser,
+  getRefreshCookieOptions,
   getSessionCookieOptions,
+  REFRESH_COOKIE_NAME,
   SESSION_COOKIE_NAME,
+  verifyRefreshToken,
 } from '../lib/session';
 
 const prisma = new PrismaClient();
@@ -32,6 +37,17 @@ type LoginThrottleState = {
 };
 
 const loginThrottleByKey = new Map<string, LoginThrottleState>();
+
+// Periodic cleanup of stale throttle entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, state] of loginThrottleByKey) {
+    // Remove entries whose window has expired AND are not locked
+    if (now - state.windowStartedAt > LOGIN_WINDOW_MS && (!state.lockUntil || state.lockUntil < now)) {
+      loginThrottleByKey.delete(key);
+    }
+  }
+}, 60_000); // Clean up every minute
 
 function getLoginThrottleKeys(email: string, ip: string) {
   const keys = [
@@ -85,7 +101,7 @@ function clearLoginFailures(keys: string[]) {
 
 const loginSchema = z.object({
   email: z.string().email().max(320),
-  password: z.string().max(256),
+  password: z.string().min(1).max(256),
 });
 
 const forgotPasswordSchema = z.object({
@@ -93,8 +109,8 @@ const forgotPasswordSchema = z.object({
 });
 
 const resetPasswordSchema = z.object({
-  token: z.string(),
-  newPassword: z.string(),
+  token: z.string().length(64).regex(/^[a-f0-9]+$/), // 32 random bytes -> 64 hex chars
+  newPassword: z.string().min(1).max(256),
 });
 
 export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
@@ -105,7 +121,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
   });
 
   // CSRF token endpoint
-  fastify.get('/csrf', async (request, reply) => {
+  fastify.get('/csrf', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const token = await reply.generateCsrf();
     return { token };
   });
@@ -132,6 +150,20 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     const { email: rawEmail, password } = loginSchema.parse(request.body);
     const email = normalizeEmail(rawEmail);
     const isCliClient = request.headers['x-aldaro-client'] === 'cli';
+
+    // SECURITY: Validate Origin header on login to prevent cross-origin login CSRF.
+    // CLI clients don't send Origin, so skip for them.
+    if (!isCliClient) {
+      const origin = (request.headers as any).origin as string | undefined;
+      const isProd = process.env.NODE_ENV === 'production';
+      const appBaseUrl = process.env.APP_BASE_URL;
+      const isValidOrigin = isProd
+        ? (origin === appBaseUrl)
+        : (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'));
+      if (!isValidOrigin) {
+        return reply.status(403).send({ error: 'Forbidden origin.' });
+      }
+    }
     const now = Date.now();
     const throttleKeys = getLoginThrottleKeys(email, request.ip);
     const activeLockUntil = getActiveThrottleLock(throttleKeys, now);
@@ -164,7 +196,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     if (user.accountStatus !== 'ACTIVE') return fail('ACCOUNT_NOT_ACTIVE');
     if (!valid) return fail();
 
-    const token = fastify.jwt.sign(buildSessionTokenPayload(user));
+    const accessToken = fastify.jwt.sign(buildSessionTokenPayload(user));
+    const refreshSecret = process.env.JWT_REFRESH_SECRET || (IS_PRODUCTION ? '' : 'dev-cookie-secret');
+    const refreshToken = buildRefreshToken(user, refreshSecret);
 
     await logSecurityEvent(request, user.id, SecurityEventType.LOGIN_SUCCESS);
 
@@ -179,13 +213,14 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       ? resolveCustomerAccessStatus(user)
       : null;
 
-    const isProduction = process.env.NODE_ENV === 'production';
     return reply
-      .setCookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions(isProduction))
-      .send({ 
+      .setCookie(SESSION_COOKIE_NAME, accessToken, getSessionCookieOptions(IS_PRODUCTION))
+      .setCookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions(IS_PRODUCTION))
+      .send({
         ok: true,
         role: user.role,
-        token: isCliClient ? token : undefined,
+        token: isCliClient ? accessToken : undefined,
+        refreshToken: isCliClient ? refreshToken : undefined,
         redirect_to,
         customerAccessStatus,
       });
@@ -206,7 +241,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     await logSecurityEvent(request, userId, SecurityEventType.LOGOUT);
 
     return reply
-      .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(process.env.NODE_ENV === 'production'))
+      .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(IS_PRODUCTION))
+      .clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions(IS_PRODUCTION))
       .send({ ok: true });
   });
 
@@ -239,6 +275,101 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
         : null,
       redirect_to: getRedirectForUser(user),
     };
+  });
+
+  // POST /auth/refresh — Silent token refresh
+  // SECURITY: This is the enforcement point for session revocation.
+  // Blocked/banned users are rejected here, forcing logout within 15 minutes.
+  // CSRF exempt: protected by sameSite:strict on refresh cookie + CORS policy.
+  fastify.post('/refresh', {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (request: any, reply) => {
+    // Accept refresh token from cookie (browser) or request body (CLI)
+    const refreshCookie = request.cookies[REFRESH_COOKIE_NAME];
+    const bodyToken = (request.body as any)?.refreshToken;
+    const token = refreshCookie || bodyToken;
+
+    if (!token || typeof token !== 'string') {
+      return reply.status(401).send({ error: 'Missing refresh token' });
+    }
+
+    const refreshSecret = process.env.JWT_REFRESH_SECRET || (IS_PRODUCTION ? '' : 'dev-cookie-secret');
+    if (!refreshSecret) {
+      return reply.status(500).send({ error: 'Server misconfigured' });
+    }
+
+    let payload;
+    try {
+      payload = verifyRefreshToken(token, refreshSecret);
+    } catch {
+      return reply.status(401).send({ error: 'Invalid or expired refresh token' });
+    }
+
+    // SECURITY: DB check — verify user is still active and password hasn't changed
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        role: true,
+        accountStatus: true,
+        passwordHash: true,
+        customerAccessStatus: true,
+        isAlphaTester: true,
+      },
+    });
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Invalid refresh token' });
+    }
+
+    // SECURITY: Reject BLOCKED/banned users — forces logout within 15 minutes
+    if (user.accountStatus !== 'ACTIVE') {
+      await logSecurityEvent(request, user.id, SecurityEventType.LOGIN_FAILURE, {
+        reason: 'REFRESH_BLOCKED_USER',
+        accountStatus: user.accountStatus,
+      });
+      return reply
+        .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(IS_PRODUCTION))
+        .clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions(IS_PRODUCTION))
+        .status(401)
+        .send({ error: 'Account suspended', code: 'ACCOUNT_BLOCKED' });
+    }
+
+    // SECURITY: Reject if password changed since refresh token was issued
+    if (buildPasswordVersion(user.passwordHash) !== payload.pwdv) {
+      return reply
+        .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(IS_PRODUCTION))
+        .clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions(IS_PRODUCTION))
+        .status(401)
+        .send({ error: 'Session invalidated', code: 'PASSWORD_CHANGED' });
+    }
+
+    // Issue new access JWT + rotate refresh token
+    const accessToken = fastify.jwt.sign(buildSessionTokenPayload(user));
+    const newRefreshToken = buildRefreshToken(user, refreshSecret);
+
+    const isCliClient = request.headers['x-aldaro-client'] === 'cli';
+    const redirect_to = getRedirectForUser(user);
+    const customerAccessStatus = user.role === 'CUSTOMER'
+      ? resolveCustomerAccessStatus(user)
+      : null;
+
+    return reply
+      .setCookie(SESSION_COOKIE_NAME, accessToken, getSessionCookieOptions(IS_PRODUCTION))
+      .setCookie(REFRESH_COOKIE_NAME, newRefreshToken, getRefreshCookieOptions(IS_PRODUCTION))
+      .send({
+        ok: true,
+        role: user.role,
+        token: isCliClient ? accessToken : undefined,
+        refreshToken: isCliClient ? newRefreshToken : undefined,
+        redirect_to,
+        customerAccessStatus,
+      });
   });
 
   fastify.post('/forgot-password', {
@@ -291,35 +422,42 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const user = await prisma.user.findFirst({
-      where: {
-        passwordResetTokenHash: tokenHash,
-        passwordResetExpiresAt: { gt: new Date() },
-      },
+
+    // SECURITY: Atomic find-and-clear in a transaction to prevent race conditions
+    // where two concurrent requests could both consume the same token.
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const user = await prisma.$transaction(async (tx: any) => {
+      const found = await tx.user.findFirst({
+        where: {
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { gt: new Date() },
+        },
+      });
+      if (!found) return null;
+
+      await tx.user.update({
+        where: { id: found.id },
+        data: {
+          passwordHash,
+          passwordResetTokenHash: null,
+          passwordResetExpiresAt: null,
+          lastReauthAt: null,
+        },
+      });
+      return found;
     });
 
     if (!user) {
       return reply.status(400).send({ error: 'Invalid or expired reset token.' });
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        passwordResetTokenHash: null,
-        passwordResetExpiresAt: null,
-        // Optional: clear lastReauthAt to force re-auth
-        lastReauthAt: null,
-      },
-    });
-
     await logSecurityEvent(request, user.id, SecurityEventType.PW_RESET_DONE);
 
-    // After password reset, revoke all active sessions by clearing the cookie
-    // In a multi-session store system, we would invalidate all sessions in the DB
+    // After password reset, revoke all active sessions by clearing both cookies.
+    // The refresh token's pwdv will also mismatch on any other device, forcing re-login.
     return reply
-      .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(process.env.NODE_ENV === 'production'))
+      .clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(IS_PRODUCTION))
+      .clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions(IS_PRODUCTION))
       .send({ ok: true, message: 'Password has been reset. Please login with your new password.' });
   });
 

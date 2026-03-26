@@ -264,71 +264,66 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
       });
     }
 
-    const activeMemberCount = await prisma.orgMembership.count({
-      where: { orgId: id, status: 'ACTIVE' },
-    });
-
-    if (activeMemberCount >= org.maxMembers) {
-      return reply.status(429).send({
-        errorCode: 'MAX_MEMBERS_REACHED',
-        message: `Organization has reached the maximum of ${org.maxMembers} members.`,
-        error: `Organization has reached the maximum of ${org.maxMembers} members.`,
-        requestId: request.id,
-      });
-    }
-
-    // Check if user is already a member
-    const existingUser = await prisma.user.findUnique({ where: { email: body.email } });
-    if (existingUser) {
-      const existingMembership = await prisma.orgMembership.findUnique({
-        where: { orgId_userId: { orgId: id, userId: existingUser.id } },
-      });
-      if (existingMembership && existingMembership.status === 'ACTIVE') {
-        return reply.status(409).send({
-          errorCode: 'ALREADY_MEMBER',
-          message: 'User is already a member of this organization.',
-          error: 'User is already a member of this organization.',
-          requestId: request.id,
-        });
-      }
-    }
-
-    // Check for existing pending invitation
-    const existingInvite = await prisma.orgInvitation.findUnique({
-      where: { orgId_email: { orgId: id, email: body.email } },
-    });
-    if (existingInvite && !existingInvite.acceptedAt && existingInvite.expiresAt > new Date()) {
-      return reply.status(409).send({
-        errorCode: 'INVITE_PENDING',
-        message: 'An active invitation already exists for this email.',
-        error: 'An active invitation already exists for this email.',
-        requestId: request.id,
-      });
-    }
-
-    // Generate invitation token
+    // Generate invitation token outside txn (crypto is safe to call anywhere)
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    // Upsert invitation (replace expired ones)
-    await prisma.orgInvitation.upsert({
-      where: { orgId_email: { orgId: id, email: body.email } },
-      update: {
-        role: body.role,
-        invitedById: userId,
-        tokenHash,
-        expiresAt,
-        acceptedAt: null,
-      },
-      create: {
-        orgId: id,
-        email: body.email,
-        role: body.role,
-        invitedById: userId,
-        tokenHash,
-        expiresAt,
-      },
+    // SECURITY: Use interactive transaction to prevent member limit race condition.
+    // Count + invite must be atomic to prevent > maxMembers.
+    await prisma.$transaction(async (tx: any) => {
+      const activeMemberCount = await tx.orgMembership.count({
+        where: { orgId: id, status: 'ACTIVE' },
+      });
+
+      if (activeMemberCount >= org.maxMembers) {
+        throw Object.assign(new Error(`Organization has reached the maximum of ${org.maxMembers} members.`), {
+          statusCode: 429, errorCode: 'MAX_MEMBERS_REACHED',
+        });
+      }
+
+      // Check if user is already a member
+      const existingUser = await tx.user.findUnique({ where: { email: body.email } });
+      if (existingUser) {
+        const existingMembership = await tx.orgMembership.findUnique({
+          where: { orgId_userId: { orgId: id, userId: existingUser.id } },
+        });
+        if (existingMembership && existingMembership.status === 'ACTIVE') {
+          throw Object.assign(new Error('User is already a member of this organization.'), {
+            statusCode: 409, errorCode: 'ALREADY_MEMBER',
+          });
+        }
+      }
+
+      // Check for existing pending invitation
+      const existingInvite = await tx.orgInvitation.findUnique({
+        where: { orgId_email: { orgId: id, email: body.email } },
+      });
+      if (existingInvite && !existingInvite.acceptedAt && existingInvite.expiresAt > new Date()) {
+        throw Object.assign(new Error('An active invitation already exists for this email.'), {
+          statusCode: 409, errorCode: 'INVITE_PENDING',
+        });
+      }
+
+      // Upsert invitation (replace expired ones)
+      await tx.orgInvitation.upsert({
+        where: { orgId_email: { orgId: id, email: body.email } },
+        update: {
+          role: body.role,
+          invitedById: userId,
+          tokenHash,
+          expiresAt,
+          acceptedAt: null,
+        },
+        create: {
+          orgId: id,
+          email: body.email,
+          role: body.role,
+          invitedById: userId,
+          tokenHash,
+          expiresAt,
+        },
+      });
     });
 
     // SECURITY: Token sent via email outbox only — never log raw tokens.

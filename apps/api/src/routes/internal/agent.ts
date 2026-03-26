@@ -17,14 +17,26 @@ const prisma = new PrismaClient();
 
 // In-memory nonce cache (in production, use Redis with TTL)
 const usedNonces = new Map<string, number>();
-const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// SECURITY: Nonce TTL matches MAX_TIMESTAMP_DRIFT_MS — payloads older than 60s
+// are already rejected by timestamp, so nonces only need to live that long.
+// In-memory Map accepted for V1 (single API instance); revisit with Redis post-launch.
+const NONCE_TTL_MS = 60 * 1000; // 60 seconds
 const MAX_TIMESTAMP_DRIFT_MS = 60 * 1000; // 1 minute
+const MAX_NONCE_CACHE_SIZE = 100_000; // Prevent unbounded memory growth
 
 // Cleanup old nonces periodically
 setInterval(() => {
   const now = Date.now();
   for (const [nonce, timestamp] of usedNonces) {
     if (now - timestamp > NONCE_TTL_MS) {
+      usedNonces.delete(nonce);
+    }
+  }
+  // Emergency eviction if cache exceeds max size
+  if (usedNonces.size > MAX_NONCE_CACHE_SIZE) {
+    const entries = [...usedNonces.entries()].sort((a, b) => a[1] - b[1]);
+    const toRemove = entries.slice(0, usedNonces.size - MAX_NONCE_CACHE_SIZE);
+    for (const [nonce] of toRemove) {
       usedNonces.delete(nonce);
     }
   }
@@ -143,20 +155,11 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
     const agentId = request.headers['x-aldaro-agent-id'] as string;
     const rawBody = (request as any).rawBody as string;
 
-    // In development, allow bypassing signature check
-    if (process.env.NODE_ENV === 'development' && !signature) {
-      return;
-    }
-
     if (!signature) {
       return reply.status(401).send({ error: 'Missing signature' });
     }
 
     if (!secret) {
-      // Development fallback
-      if (process.env.NODE_ENV === 'development') {
-        return;
-      }
       return reply.status(500).send({ error: 'Server misconfigured' });
     }
 

@@ -43,11 +43,22 @@ function verifyJwt(token: string): { valid: boolean; payload?: any } {
     const parts = token.replace('Bearer ', '').split('.');
     if (parts.length !== 3) return { valid: false };
     const [headerB64, payloadB64, signatureB64] = parts;
+
+    // SECURITY: Verify the algorithm is HS256 to prevent algorithm confusion attacks
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+    if (header.alg !== 'HS256') return { valid: false };
+
+    // Use timing-safe comparison to prevent timing attacks
     const expected = crypto
       .createHmac('sha256', JWT_SECRET)
       .update(`${headerB64}.${payloadB64}`)
       .digest('base64url');
-    if (expected !== signatureB64) return { valid: false };
+    const sigBuf = Buffer.from(signatureB64);
+    const expectedBuf = Buffer.from(expected);
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+      return { valid: false };
+    }
+
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
     // Check expiry
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
@@ -141,6 +152,7 @@ const allocatedPorts = new Set<number>();
 // Exposed port cache — maps subdomain to routing info
 interface ExposedPortMapping {
   workspace_id: string;
+  user_id: string;
   internal_port: number;
   vm_internal_ip: string;
   access_mode: string; // PUBLIC or PRIVATE
@@ -151,9 +163,10 @@ const exposedPortMappings = new Map<string, ExposedPortMapping>();
 const exposePortSchema = z.object({
   workspace_id: z.string().uuid(),
   internal_port: z.number().int().min(1).max(65535),
-  subdomain: z.string(),
+  subdomain: z.string().regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/, 'Invalid subdomain format'),
   vm_internal_ip: z.string().ip(),
   access_mode: z.enum(['PUBLIC', 'PRIVATE']).default('PRIVATE'),
+  user_id: z.string().optional(),
   nonce: z.string().optional(),
   timestamp: z.number().optional(),
 });
@@ -240,6 +253,7 @@ async function reconcileLeases() {
       if (ep.workspace?.vmInternalIp) {
         exposedPortMappings.set(ep.publicSubdomain, {
           workspace_id: ep.workspaceId,
+          user_id: ep.userId,
           internal_port: ep.internalPort,
           vm_internal_ip: ep.workspace.vmInternalIp,
           access_mode: ep.accessMode,
@@ -303,8 +317,12 @@ fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
     return;
   }
 
-  if (!serviceSecret && !isProduction) {
-    return;
+  if (!serviceSecret) {
+    if (!isProduction) {
+      console.warn('[Gateway] WARNING: No GATEWAY_SHARED_SECRET set — auth bypassed in dev mode');
+      return;
+    }
+    return reply.status(500).send({ error: 'Server misconfigured' });
   }
 
   const signature = request.headers['x-gateway-signature'] as string;
@@ -312,10 +330,6 @@ fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
 
   if (!signature) {
     return reply.status(401).send({ error: 'Missing signature' });
-  }
-
-  if (!serviceSecret) {
-    return reply.status(500).send({ error: 'Server misconfigured' });
   }
 
   if (!verifySignature(rawBody, signature, serviceSecret)) {
@@ -447,7 +461,7 @@ fastify.post('/internal/gateway/release', async (request, reply) => {
 // --- Exposed Port Routes (Zero Trust Tunnels) ---
 
 fastify.post('/internal/gateway/expose-port', async (request, reply) => {
-  const { workspace_id, internal_port, subdomain, vm_internal_ip, access_mode } = exposePortSchema.parse(request.body);
+  const { workspace_id, internal_port, subdomain, vm_internal_ip, access_mode, user_id } = exposePortSchema.parse(request.body);
 
   // SECURITY: Block SSRF — only allow proxying to workspace VM subnet
   if (!isAllowedProxyTarget(vm_internal_ip, internal_port)) {
@@ -459,6 +473,7 @@ fastify.post('/internal/gateway/expose-port', async (request, reply) => {
 
   const mapping: ExposedPortMapping = {
     workspace_id,
+    user_id: user_id || '',
     internal_port,
     vm_internal_ip,
     access_mode,
@@ -476,7 +491,7 @@ fastify.post('/internal/gateway/expose-port', async (request, reply) => {
       update: { status: 'ACTIVE', releasedAt: null, accessMode: access_mode },
       create: {
         workspaceId: workspace_id,
-        userId: '', // filled by API layer; gateway only stores routing
+        userId: user_id || '', // filled by API layer; gateway stores for ownership checks
         internalPort: internal_port,
         publicSubdomain: subdomain,
         publicUrl,
@@ -582,9 +597,13 @@ fastify.all('/proxy/:subdomain/*', async (request: any, reply) => {
     if (!token) {
       return reply.status(401).send({ error: 'Unauthorized', message: 'This port requires Aldaro authentication' });
     }
-    const { valid } = verifyJwt(token);
+    const { valid, payload } = verifyJwt(token);
     if (!valid) {
       return reply.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired authentication token' });
+    }
+    // SECURITY: Verify the authenticated user owns this workspace
+    if (mapping.user_id && payload?.userId !== mapping.user_id && payload?.sub !== mapping.user_id) {
+      return reply.status(403).send({ error: 'Forbidden', message: 'You do not have access to this resource' });
     }
   }
 
@@ -623,9 +642,17 @@ fastify.server.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buff
       socket.destroy();
       return;
     }
-    if (!verifyJwt(token).valid) {
+    const { valid, payload } = verifyJwt(token);
+    if (!valid) {
       console.warn(`[GATEWAY] WebSocket upgrade denied: invalid/expired token for ${subdomain} from ${req.socket.remoteAddress}`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    // SECURITY: Verify the authenticated user owns this workspace
+    if (mapping.user_id && payload?.userId !== mapping.user_id && payload?.sub !== mapping.user_id) {
+      console.warn(`[GATEWAY] WebSocket upgrade denied: user does not own workspace for ${subdomain} from ${req.socket.remoteAddress}`);
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
     }

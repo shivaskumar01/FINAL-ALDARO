@@ -239,13 +239,9 @@ export class WorkspaceService {
     // Allocate gateway ports with secure tokens
     await this.allocateGatewayPorts(workspace.id, workspace.vmInternalIp!);
 
-    // Start usage session
-    await this.startUsageSession(userId, workspace.id, workspace.gpuType);
-
-    await prisma.workspace.update({
-      where: { id: workspace.id },
-      data: { status: 'RUNNING_ASSIGNED' },
-    });
+    // SECURITY: Atomically start usage session AND set RUNNING_ASSIGNED in one transaction.
+    // This prevents orphaned workspaces with no billing session (audit gap #1).
+    await this.startUsageSessionWithStatus(userId, workspace.id, workspace.gpuType);
 
     return workspace;
   }
@@ -312,6 +308,7 @@ export class WorkspaceService {
     
     const res = await axios.post(`${gatewayUrl}/internal/gateway/allocate`, body, {
       headers: signature ? { 'x-gateway-signature': signature } : {},
+      timeout: 10_000, // SECURITY: Prevent indefinite hang if gateway is unresponsive
     });
 
     const { gateway_host, ssh_port, jupyter_port, vscode_port } = res.data;
@@ -358,6 +355,69 @@ export class WorkspaceService {
     // TODO: Send credentials to agent inside VM via secure channel
     // The agent should configure Jupyter with the token and VSCode with the password
     // This could be done via cloud-init, or via a secure agent API call
+  }
+
+  /**
+   * Atomically create usage session AND set workspace to RUNNING_ASSIGNED.
+   * Prevents orphaned workspace with no billing session.
+   */
+  async startUsageSessionWithStatus(userId: string, workspaceId: string, gpuType: string, lockedPriceCents?: number | null) {
+    const pricePerHourCents = await this.resolvePrice(gpuType, lockedPriceCents);
+
+    try {
+      await prisma.$transaction([
+        prisma.usageSession.create({
+          data: {
+            userId,
+            workspaceId,
+            gpuType,
+            startTime: new Date(),
+            status: 'RUNNING',
+            pricePerHourCents,
+          },
+        }),
+        prisma.workspace.update({
+          where: { id: workspaceId },
+          data: { status: 'RUNNING_ASSIGNED' },
+        }),
+      ]);
+    } catch (err: any) {
+      // P2002 = unique constraint violation (concurrent race). Session already exists.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Session exists, still ensure status is updated
+        await prisma.workspace.update({
+          where: { id: workspaceId },
+          data: { status: 'RUNNING_ASSIGNED' },
+        });
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async resolvePrice(gpuType: string, lockedPriceCents?: number | null): Promise<number> {
+    if (lockedPriceCents != null && lockedPriceCents > 0) {
+      return lockedPriceCents;
+    }
+
+    const warmPoolCfg = await prisma.warmPoolConfig.findFirst({
+      where: { gpuType },
+    });
+
+    if (warmPoolCfg && warmPoolCfg.currentSpotPriceCents > 0) {
+      await prisma.warmPoolConfig.update({
+        where: { id: warmPoolCfg.id },
+        data: { lastRentalAt: new Date() },
+      });
+      return warmPoolCfg.currentSpotPriceCents;
+    }
+
+    const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
+    if (!sku) {
+      // SECURITY: Refuse to launch at $0 — missing SKU is a config error, not a free GPU.
+      throw new Error(`[BILLING] GpuSku not found for key "${gpuType}" — cannot determine price. Launch blocked.`);
+    }
+    return sku.pricePerHourCents || 0;
   }
 
   async startUsageSession(userId: string, workspaceId: string, gpuType: string, lockedPriceCents?: number | null) {

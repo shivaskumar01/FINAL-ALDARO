@@ -18,9 +18,13 @@ export const billingRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
 
     let customerId = user.stripeCustomerId;
     if (!customerId) {
+      // SECURITY: Idempotency key prevents duplicate Stripe customers if
+      // Stripe succeeds but the DB update fails and the user retries.
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: { userId: user.id },
+      }, {
+        idempotencyKey: `create-customer-${user.id}`,
       });
       customerId = customer.id;
       await prisma.user.update({
@@ -57,7 +61,9 @@ export const billingRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     try {
       event = stripe.webhooks.constructEvent(request.rawBody, sig, webhookSecret);
     } catch (err: any) {
-      return reply.status(400).send(`Webhook Error: ${err.message}`);
+      // SECURITY: Do not leak Stripe error details to the client
+      console.error('[Billing] Webhook signature verification failed:', err.message);
+      return reply.status(400).send({ error: 'Webhook signature verification failed.' });
     }
 
     if (event.type === 'setup_intent.succeeded') {

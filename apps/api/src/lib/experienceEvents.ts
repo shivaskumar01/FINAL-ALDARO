@@ -79,7 +79,8 @@ export interface EmitEventOptions {
  */
 function hashIp(ip: string): string {
   if (!ip) return '';
-  return crypto.createHash('sha256').update(ip + process.env.JWT_ACCESS_SECRET).digest('hex').slice(0, 16);
+  const salt = process.env.IP_HASH_SALT || process.env.JWT_ACCESS_SECRET || '';
+  return crypto.createHash('sha256').update(ip + salt).digest('hex').slice(0, 16);
 }
 
 /**

@@ -25,6 +25,7 @@
     "node-fetch": "^2.7.0",
     "prisma": "^5.5.2",
     "stripe": "^14.1.0",
+    "jsonwebtoken": "^9.0.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -36,7 +37,6 @@
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^11.0.0",
     "jest": "^30.2.0",
-    "jsonwebtoken": "^9.0.3",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node-dev": "^2.0.0",

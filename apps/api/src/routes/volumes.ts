@@ -61,11 +61,12 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const query = request.query as any;
     const statusFilter = query.status;
 
+    const VALID_VOLUME_STATUSES = ['CREATING', 'AVAILABLE', 'ATTACHED', 'DETACHING', 'DELETING', 'FAILED'];
     const where: any = {
       userId,
       status: { notIn: ['DELETED'] },
     };
-    if (statusFilter) {
+    if (statusFilter && VALID_VOLUME_STATUSES.includes(statusFilter)) {
       where.status = statusFilter;
     }
 

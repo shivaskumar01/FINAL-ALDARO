@@ -9,6 +9,7 @@
  */
 
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
 import { prisma } from '@aldaro/db';
 
 // Redis client for caching (optional) - only connect when REDIS_URL is set
@@ -482,20 +483,21 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // =========================================================================
   // POST /author/usage/incidents - Create manual incident
   // =========================================================================
+  const createIncidentSchema = z.object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
+    severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
+    type: z.string().trim().max(64).regex(/^[a-z0-9_]+$/i).default('manual'),
+  });
+
   fastify.post('/incidents', async (request: any, reply: any) => {
-    const body = request.body as { title: string; description?: string; severity?: string; type?: string };
-    const title = body.title?.trim();
-    if (!title || title.length > 200) {
-      return reply.status(400).send({ error: 'Title is required (max 200 characters)' });
-    }
-    const severity = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(body.severity || '') ? body.severity : 'MEDIUM';
-    const type = (body.type?.trim() || 'manual').replace(/[^a-z0-9_]/gi, '_').slice(0, 64) || 'manual';
+    const { title, description, severity, type } = createIncidentSchema.parse(request.body);
     const incident = await prisma.incident.create({
       data: {
         type,
         severity,
         title,
-        description: body.description?.trim()?.slice(0, 2000) || null,
+        description: description || null,
         status: 'OPEN',
         count: 1,
       },
@@ -507,10 +509,15 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/terminate-workspace
   // Terminates a workspace (idempotent)
   // =========================================================================
+  const terminateWorkspaceSchema = z.object({
+    workspaceId: z.string().uuid(),
+    reason: z.string().max(500).optional(),
+  });
+
   fastify.post('/actions/terminate-workspace', {
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
   }, async (request: any) => {
-    const { workspaceId, reason } = request.body as { workspaceId: string; reason?: string };
+    const { workspaceId, reason } = terminateWorkspaceSchema.parse(request.body);
     const actorId = request.user.userId;
 
     const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
@@ -548,11 +555,21 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/disable-gpu
   // Disables a GPU
   // =========================================================================
+  const gpuActionSchema = z.object({
+    gpuId: z.string().uuid(),
+    reason: z.string().max(500).optional(),
+  });
+
   fastify.post('/actions/disable-gpu', {
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
   }, async (request: any) => {
-    const { gpuId, reason } = request.body as { gpuId: string; reason?: string };
+    const { gpuId, reason } = gpuActionSchema.parse(request.body);
     const actorId = request.user.userId;
+
+    const gpu = await prisma.fleetGpu.findUnique({ where: { id: gpuId } });
+    if (!gpu) {
+      return { success: false, error: 'GPU not found' };
+    }
 
     await prisma.fleetGpu.update({
       where: { id: gpuId },
@@ -576,11 +593,21 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/drain-node
   // Enables/disables a node for new workloads
   // =========================================================================
+  const drainNodeSchema = z.object({
+    nodeId: z.string().uuid(),
+    enabled: z.boolean(),
+  });
+
   fastify.post('/actions/drain-node', {
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
   }, async (request: any) => {
-    const { nodeId, enabled } = request.body as { nodeId: string; enabled: boolean };
+    const { nodeId, enabled } = drainNodeSchema.parse(request.body);
     const actorId = request.user.userId;
+
+    const node = await prisma.fleetNode.findUnique({ where: { id: nodeId } });
+    if (!node) {
+      return { success: false, error: 'Node not found' };
+    }
 
     await prisma.fleetNode.update({
       where: { id: nodeId },
@@ -603,8 +630,10 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/enable-gpu
   // Enables a previously disabled GPU
   // =========================================================================
-  fastify.post('/actions/enable-gpu', async (request: any) => {
-    const { gpuId, reason } = request.body as { gpuId: string; reason?: string };
+  fastify.post('/actions/enable-gpu', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: any) => {
+    const { gpuId, reason } = gpuActionSchema.parse(request.body);
     const actorId = request.user.userId;
 
     const gpu = await prisma.fleetGpu.findUnique({ where: { id: gpuId } });
@@ -634,15 +663,16 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/emergency-stop
   // Stops all provisioning activity (circuit breaker)
   // =========================================================================
+  const emergencyStopSchema = z.object({
+    enabled: z.boolean(),
+    reason: z.string().min(1, 'Reason is required for emergency stop').max(1000),
+  });
+
   fastify.post('/actions/emergency-stop', {
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
   }, async (request: any) => {
-    const { enabled, reason } = request.body as { enabled: boolean; reason: string };
+    const { enabled, reason } = emergencyStopSchema.parse(request.body);
     const actorId = request.user.userId;
-
-    if (!reason) {
-      return { success: false, error: 'Reason is required for emergency stop' };
-    }
 
     // Update config change
     await prisma.configChange.create({
@@ -687,13 +717,17 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/update-warm-pool
   // Updates warm pool targets
   // =========================================================================
-  fastify.post('/actions/update-warm-pool', async (request: any) => {
-    const { gpuType, region, targetCount, reason } = request.body as { 
-      gpuType: string; 
-      region: string; 
-      targetCount: number;
-      reason?: string;
-    };
+  const updateWarmPoolSchema = z.object({
+    gpuType: z.string().min(1).max(64),
+    region: z.string().min(1).max(64),
+    targetCount: z.number().int().min(0).max(50), // Hard ceiling to prevent fleet exhaustion
+    reason: z.string().max(500).optional(),
+  });
+
+  fastify.post('/actions/update-warm-pool', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request: any) => {
+    const { gpuType, region, targetCount, reason } = updateWarmPoolSchema.parse(request.body);
     const actorId = request.user.userId;
 
     const existing = await prisma.warmPoolConfig.findUnique({
@@ -736,9 +770,21 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/acknowledge-incident
   // Acknowledge an incident
   // =========================================================================
-  fastify.post('/actions/acknowledge-incident', async (request: any) => {
-    const { incidentId, notes } = request.body as { incidentId: string; notes?: string };
+  const incidentActionSchema = z.object({
+    incidentId: z.string().uuid(),
+    notes: z.string().max(2000).optional(),
+  });
+
+  fastify.post('/actions/acknowledge-incident', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: any) => {
+    const { incidentId, notes } = incidentActionSchema.parse(request.body);
     const actorId = request.user.userId;
+
+    const incident = await prisma.incident.findUnique({ where: { id: incidentId } });
+    if (!incident) {
+      return { success: false, error: 'Incident not found' };
+    }
 
     await prisma.incident.update({
       where: { id: incidentId },
@@ -766,9 +812,16 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // POST /author/actions/resolve-incident
   // Resolve an incident
   // =========================================================================
-  fastify.post('/actions/resolve-incident', async (request: any) => {
-    const { incidentId, notes } = request.body as { incidentId: string; notes?: string };
+  fastify.post('/actions/resolve-incident', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: any) => {
+    const { incidentId, notes } = incidentActionSchema.parse(request.body);
     const actorId = request.user.userId;
+
+    const incident = await prisma.incident.findUnique({ where: { id: incidentId } });
+    if (!incident) {
+      return { success: false, error: 'Incident not found' };
+    }
 
     await prisma.incident.update({
       where: { id: incidentId },
@@ -797,26 +850,27 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
   // Returns the audit timeline for the author portal
   // =========================================================================
   fastify.get('/audit-timeline', async (request: any) => {
-    const { window = '24h', limit = 100 } = request.query as any;
+    const { window = '24h', limit: limitParam = '100' } = request.query as any;
     const windowMs = parseWindow(window);
     const windowStart = new Date(Date.now() - windowMs);
+    const limit = Math.min(Math.max(parseInt(limitParam, 10) || 100, 1), 500);
 
     const [audits, configChanges, incidents] = await Promise.all([
       prisma.authorAudit.findMany({
         where: { createdAt: { gte: windowStart } },
         orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
+        take: limit,
         include: { actor: { select: { email: true } } },
       }),
       prisma.configChange.findMany({
         where: { createdAt: { gte: windowStart } },
         orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
+        take: limit,
       }),
       prisma.incident.findMany({
         where: { firstSeenAt: { gte: windowStart } },
         orderBy: { firstSeenAt: 'desc' },
-        take: parseInt(limit),
+        take: limit,
       }),
     ]);
 
@@ -828,7 +882,7 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
         action: a.action,
         actor: a.actor?.email,
         target: `${a.targetType}:${a.targetId}`,
-        details: a.diffJson ? JSON.parse(a.diffJson) : null,
+        details: a.diffJson ? (() => { try { return JSON.parse(a.diffJson); } catch { return null; } })() : null,
       })),
       ...configChanges.map(c => ({
         type: 'config',
@@ -847,7 +901,7 @@ export const authorUsageRoutes: FastifyPluginAsync = async (fastify: FastifyInst
         details: { severity: i.severity, title: i.title, count: i.count },
       })),
     ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-     .slice(0, parseInt(limit));
+     .slice(0, limit);
 
     return { timeline };
   });
@@ -862,7 +916,10 @@ function parseWindow(window: string): number {
   if (!match) return 24 * 60 * 60 * 1000; // default 24h
   const value = parseInt(match[1]);
   const unit = match[2];
-  return unit === 'h' ? value * 60 * 60 * 1000 : value * 24 * 60 * 60 * 1000;
+  const ms = unit === 'h' ? value * 60 * 60 * 1000 : value * 24 * 60 * 60 * 1000;
+  // Cap at 90 days to prevent unbounded queries
+  const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+  return Math.min(ms, MAX_WINDOW_MS);
 }
 
 async function getLiveNowMetrics() {

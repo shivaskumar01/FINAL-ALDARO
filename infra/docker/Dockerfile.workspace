@@ -23,10 +23,16 @@ RUN mkdir -p /opt/aldaro
 COPY verify.py entrypoint.sh report_verify.py heartbeat_loop.py /opt/aldaro/
 RUN chmod +x /opt/aldaro/entrypoint.sh
 
-# SSH config
+# SECURITY: Create non-root workspace user with SSH key auth only
+RUN useradd -m -s /bin/bash aldaro && \
+    echo 'aldaro ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/aldaro
 RUN mkdir /var/run/sshd
-RUN echo 'root:root' | chpasswd
-RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+# SECURITY: Lock root password, disable root login, disable password auth
+RUN passwd -l root && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
+RUN mkdir -p /home/aldaro/.ssh && chmod 700 /home/aldaro/.ssh && chown aldaro:aldaro /home/aldaro/.ssh
 
 EXPOSE 22 8888 8080
 

@@ -35,6 +35,12 @@ export const agentRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       return reply.status(404).send({ error: 'Run not found' });
     }
 
+    // SECURITY: Limit max agent sessions per run to prevent abuse
+    const sessionCount = await prisma.agentSession.count({ where: { runId: body.run_id } });
+    if (sessionCount >= 50) {
+      return reply.status(429).send({ error: 'Maximum agent sessions per run exceeded' });
+    }
+
     const session = await prisma.agentSession.create({
       data: {
         runId: body.run_id,

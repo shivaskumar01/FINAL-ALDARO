@@ -67,11 +67,25 @@ export class ProxmoxFleetProvider {
         'Authorization': apiToken,
         'Content-Type': 'application/json',
       },
-      // Proxmox often uses self-signed certs in internal fleet
-      // In production with proper PKI, set rejectUnauthorized: true
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      // SECURITY: TLS verification controlled by environment.
+      // In production, PROXMOX_TLS_VERIFY should be 'true' (default).
+      // Only disable for development with self-signed certs.
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: process.env.PROXMOX_TLS_VERIFY !== 'false',
+      }),
       timeout: 30000,
     });
+
+    // SECURITY: Redact auth headers from error responses to prevent token leakage in logs
+    this.api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.config?.headers) {
+          error.config.headers = { ...error.config.headers, Authorization: '[REDACTED]' };
+        }
+        return Promise.reject(error);
+      },
+    );
   }
 
   /**

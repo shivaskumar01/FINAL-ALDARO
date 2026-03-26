@@ -13,9 +13,18 @@ export const githubRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const userId = request.user.userId;
     const { installation_id } = z.object({ installation_id: z.string() }).parse(request.body);
 
+    // SECURITY: Don't allow claiming another user's existing installation.
+    // Only create new or update own installations.
+    const existing = await prisma.gitHubInstallation.findUnique({
+      where: { installationId: installation_id },
+    });
+    if (existing && existing.userId !== userId) {
+      return reply.status(403).send({ error: 'Installation belongs to another user.' });
+    }
+
     const installation = await prisma.gitHubInstallation.upsert({
       where: { installationId: installation_id },
-      update: { userId }, // Re-link if exists
+      update: { userId },
       create: {
         userId,
         installationId: installation_id,

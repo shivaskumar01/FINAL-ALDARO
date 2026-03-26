@@ -1,7 +1,9 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { resolveCustomerAccessStatus } from './customerAccess';
 
 export const SESSION_COOKIE_NAME = 'aldaro_session';
+export const REFRESH_COOKIE_NAME = 'aldaro_refresh';
 
 type SessionUserLike = {
   id: string;
@@ -18,13 +20,29 @@ export type SessionTokenPayload = {
   pwdv: string;
 };
 
+export type RefreshTokenPayload = {
+  userId: string;
+  pwdv: string;
+  type: 'refresh';
+};
+
 export function getSessionCookieOptions(isProduction: boolean) {
   return {
     path: '/',
     httpOnly: true,
     secure: isProduction,
     sameSite: 'strict' as const,
-    maxAge: 3600 * 2, // Match JWT TTL (2 hours)
+    maxAge: 60 * 15, // Match access JWT TTL (15 minutes)
+  };
+}
+
+export function getRefreshCookieOptions(isProduction: boolean) {
+  return {
+    path: '/auth',
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict' as const,
+    maxAge: 7 * 24 * 3600, // 7 days
   };
 }
 
@@ -43,6 +61,28 @@ export function buildSessionTokenPayload(user: Pick<SessionUserLike, 'id' | 'rol
     jti: crypto.randomUUID(),
     pwdv: buildPasswordVersion(user.passwordHash),
   };
+}
+
+export function buildRefreshToken(
+  user: Pick<SessionUserLike, 'id' | 'passwordHash'>,
+  secret: string,
+): string {
+  if (!user.passwordHash) {
+    throw new Error('passwordHash is required to build a refresh token');
+  }
+  return jwt.sign(
+    { userId: user.id, pwdv: buildPasswordVersion(user.passwordHash), type: 'refresh' },
+    secret,
+    { algorithm: 'HS256', expiresIn: '7d' },
+  );
+}
+
+export function verifyRefreshToken(token: string, secret: string): RefreshTokenPayload {
+  const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as any;
+  if (decoded.type !== 'refresh') {
+    throw new Error('Invalid token type');
+  }
+  return decoded as RefreshTokenPayload;
 }
 
 export function getRedirectForUser(user: SessionUserLike) {

@@ -12,7 +12,6 @@ const prisma = new PrismaClient();
 
 const APPLICATION_UPDATE_COOLDOWN_MS = 60_000;
 const RESEND_EMAIL_COOLDOWN_MS = 3 * 60_000; // 3 minutes
-const resendRateLimitByUserId = new Map<string, number>();
 
 export const customerAccessRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   fastify.addHook('preHandler', fastify.authenticate as any);
@@ -130,8 +129,16 @@ export const customerAccessRoutes: FastifyPluginAsync = async (fastify: FastifyI
     }
 
     const now = Date.now();
-    const last = resendRateLimitByUserId.get(userId) ?? 0;
-    if (now - last < RESEND_EMAIL_COOLDOWN_MS) {
+    // SECURITY: DB-backed cooldown check — survives API restarts and works across instances.
+    const recentEmail = await prisma.emailOutbox.findFirst({
+      where: {
+        userId,
+        type: 'APPLICATION_IN_REVIEW',
+        createdAt: { gte: new Date(now - RESEND_EMAIL_COOLDOWN_MS) },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (recentEmail) {
       return reply.status(429).send({ error: 'Please wait a few minutes before requesting another email.' });
     }
 
@@ -150,7 +157,6 @@ export const customerAccessRoutes: FastifyPluginAsync = async (fastify: FastifyI
       },
     });
     if (recentSent) {
-      resendRateLimitByUserId.set(userId, now);
       return reply.send({ ok: true, message: 'Email sent.' });
     }
 
@@ -169,7 +175,6 @@ export const customerAccessRoutes: FastifyPluginAsync = async (fastify: FastifyI
       },
     });
 
-    resendRateLimitByUserId.set(userId, now);
     return reply.send({ ok: true, message: 'Email sent.' });
   });
 };

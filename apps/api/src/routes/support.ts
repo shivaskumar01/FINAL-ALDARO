@@ -7,18 +7,26 @@ const prisma = new PrismaClient();
 export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   fastify.addHook('preHandler', fastify.authenticate as any);
 
-  // GET /support/tickets — list user's tickets
+  // GET /support/tickets — list user's tickets (paginated)
   fastify.get('/tickets', async (request: any) => {
     const userId = request.user.userId;
-    const tickets = await prisma.supportTicket.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      include: {
-        _count: { select: { messages: true } },
-      },
-    });
-    return { tickets };
+    const { page: rawPage = '1', limit: rawLimit = '20' } = request.query as any;
+    const page = Math.max(1, Math.min(parseInt(rawPage, 10) || 1, 100));
+    const limit = Math.max(1, Math.min(parseInt(rawLimit, 10) || 20, 50));
+
+    const [tickets, total] = await Promise.all([
+      prisma.supportTicket.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          _count: { select: { messages: true } },
+        },
+      }),
+      prisma.supportTicket.count({ where: { userId } }),
+    ]);
+    return { tickets, total, page, limit };
   });
 
   // GET /support/tickets/:id — ticket detail with messages

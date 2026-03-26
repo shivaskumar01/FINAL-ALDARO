@@ -28,14 +28,28 @@ async function sendMeterEvent(
   event: WorkspaceMeterEventOutbox,
   stripeCustomerId: string,
 ): Promise<{ stripeMeterEventId: string }> {
-  const response = await fetch(STRIPE_METER_EVENTS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${stripeSecretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: buildStripeBody(event.eventName, event.usageSessionId, event.valueSeconds, stripeCustomerId),
-  });
+  // SECURITY: Idempotency key prevents duplicate billing on retry after
+  // Stripe success + DB commit failure (audit gap: Stripe double-billing).
+  const idempotencyKey = `meter-${event.usageSessionId}-${event.id}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  let response;
+  try {
+    response = await fetch(STRIPE_METER_EVENTS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeSecretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: buildStripeBody(event.eventName, event.usageSessionId, event.valueSeconds, stripeCustomerId),
+      signal: controller.signal as any,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const raw = await response.text();
   let json: any = null;
@@ -122,9 +136,17 @@ async function processMeterOutboxEvent(
   }
 }
 
+let _stripeMissingWarned = false;
+
 export async function processWorkspaceMeterEvents(prisma: PrismaClient) {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-  if (!stripeSecretKey) return;
+  if (!stripeSecretKey) {
+    if (!_stripeMissingWarned) {
+      console.warn('[Metering] STRIPE_SECRET_KEY not set — all meter events will be silently skipped. Billing is DISABLED.');
+      _stripeMissingWarned = true;
+    }
+    return;
+  }
 
   const now = new Date();
   const events = await prisma.workspaceMeterEventOutbox.findMany({

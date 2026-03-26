@@ -13,13 +13,28 @@ import crypto from 'crypto';
 const ENCRYPTED_PREFIX = 'enc:';
 
 let _derivedKey: Buffer | null = null;
+let _legacyKey: Buffer | null = null;
 
 function getDerivedKey(): Buffer | null {
   if (_derivedKey) return _derivedKey;
   const key = process.env.ENCRYPTION_KEY;
   if (!key || key.length < 32) return null;
-  _derivedKey = crypto.createHash('sha256').update(key).digest();
+  // SECURITY: Use HKDF for proper key derivation instead of raw SHA-256
+  _derivedKey = crypto.hkdfSync('sha256', key, 'aldaro-encryption-salt', 'aes-256-gcm-key', 32) as unknown as Buffer;
+  // hkdfSync returns an ArrayBuffer, convert to Buffer
+  if (!Buffer.isBuffer(_derivedKey)) {
+    _derivedKey = Buffer.from(_derivedKey);
+  }
   return _derivedKey;
+}
+
+/** Legacy SHA-256 key derivation — used only as decryption fallback for pre-HKDF data. */
+function getLegacyKey(): Buffer | null {
+  if (_legacyKey) return _legacyKey;
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key || key.length < 32) return null;
+  _legacyKey = crypto.createHash('sha256').update(key).digest();
+  return _legacyKey;
 }
 
 /**
@@ -28,7 +43,13 @@ function getDerivedKey(): Buffer | null {
  */
 export function encryptSecret(plaintext: string): string {
   const key = getDerivedKey();
-  if (!key) return plaintext;
+  if (!key) {
+    // SECURITY: In production, never silently degrade to plaintext storage
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ENCRYPTION_KEY is required in production — refusing to store plaintext secret');
+    }
+    return plaintext;
+  }
 
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -62,10 +83,22 @@ export function decryptSecret(stored: string): string {
   const authTag = Buffer.from(tagB64, 'base64');
   const data = Buffer.from(dataB64, 'base64');
 
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-  return decrypted.toString('utf8');
+  // Try HKDF-derived key first (current), fall back to legacy SHA-256 key
+  // for data encrypted before the HKDF migration.
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    return decrypted.toString('utf8');
+  } catch {
+    const legacy = getLegacyKey();
+    if (!legacy) throw new Error('Decryption failed and no legacy key available');
+    console.warn('[SECURITY] Decrypting with DEPRECATED legacy SHA-256 key. Re-encrypt this secret with the current HKDF key.');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', legacy, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    return decrypted.toString('utf8');
+  }
 }
 
 /**

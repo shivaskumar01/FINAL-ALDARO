@@ -67,7 +67,9 @@ export const spotPricingRoutes: FastifyPluginAsync = async (fastify: FastifyInst
    * GET /spot-pricing/:gpuType
    * Public endpoint — returns spot price for a specific GPU type.
    */
-  fastify.get('/:gpuType', async (request: any, reply: any) => {
+  fastify.get('/:gpuType', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request: any, reply: any) => {
     const { gpuType } = request.params as { gpuType: string };
 
     const cfg = await prisma.warmPoolConfig.findFirst({
@@ -77,8 +79,7 @@ export const spotPricingRoutes: FastifyPluginAsync = async (fastify: FastifyInst
     if (!cfg) {
       return reply.status(404).send({
         errorCode: 'GPU_TYPE_NOT_FOUND',
-        message: `No pricing configuration found for GPU type: ${gpuType}`,
-        error: `No pricing configuration found for GPU type: ${gpuType}`,
+        error: 'No pricing configuration found for the requested GPU type.',
       });
     }
 

@@ -128,8 +128,13 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
 
     const fromStatus = app.user.customerAccessStatus ?? 'PENDING_REVIEW';
 
-    await prisma.$transaction([
-      prisma.user.update({
+    // Use interactive transaction to prevent concurrent approve/reject race:
+    // the inner findUnique re-checks decision inside the txn boundary.
+    await prisma.$transaction(async (tx: any) => {
+      const fresh = await tx.customerApplication.findUnique({ where: { id: applicationId } });
+      if (fresh?.decision) throw Object.assign(new Error('Application already reviewed'), { statusCode: 400 });
+
+      await tx.user.update({
         where: { id: app.userId },
         data: {
           isAlphaTester: true,
@@ -138,8 +143,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           customerAccessUpdatedById: actorId,
           customerAccessReason: null,
         },
-      }),
-      prisma.customerApplication.update({
+      });
+      await tx.customerApplication.update({
         where: { id: applicationId },
         data: {
           decision: 'APPROVED',
@@ -147,8 +152,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           reviewedById: actorId,
           internalNotes: internalNotes ?? app.internalNotes,
         },
-      }),
-      prisma.emailOutbox.upsert({
+      });
+      await tx.emailOutbox.upsert({
         where: { dedupeKey: `APPLICATION_ACCEPTED:${app.id}` },
         update: {},
         create: {
@@ -162,8 +167,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           status: 'PENDING',
           dedupeKey: `APPLICATION_ACCEPTED:${app.id}`,
         },
-      }),
-      prisma.authorAudit.create({
+      });
+      await tx.authorAudit.create({
         data: {
           actorUserId: actorId,
           action: 'CUSTOMER_APPROVE',
@@ -176,8 +181,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
             reason: internalNotes ?? null,
           }),
         },
-      }),
-    ]);
+      });
+    });
 
     return { customerAccessStatus: 'APPROVED' };
   });
@@ -205,8 +210,12 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
 
     const fromStatus = app.user.customerAccessStatus ?? 'PENDING_REVIEW';
 
-    await prisma.$transaction([
-      prisma.user.update({
+    // Interactive transaction to prevent concurrent approve/reject race
+    await prisma.$transaction(async (tx: any) => {
+      const fresh = await tx.customerApplication.findUnique({ where: { id: applicationId } });
+      if (fresh?.decision) throw Object.assign(new Error('Application already reviewed'), { statusCode: 400 });
+
+      await tx.user.update({
         where: { id: app.userId },
         data: {
           isAlphaTester: false,
@@ -215,8 +224,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           customerAccessUpdatedById: actorId,
           customerAccessReason: body.data.decisionReason,
         },
-      }),
-      prisma.customerApplication.update({
+      });
+      await tx.customerApplication.update({
         where: { id: applicationId },
         data: {
           decision: 'REJECTED',
@@ -225,8 +234,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           reviewedById: actorId,
           internalNotes: body.data.internalNotes ?? app.internalNotes,
         },
-      }),
-      prisma.emailOutbox.upsert({
+      });
+      await tx.emailOutbox.upsert({
         where: { dedupeKey: `APPLICATION_REJECTED:${app.id}` },
         update: {},
         create: {
@@ -240,8 +249,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
           status: 'PENDING',
           dedupeKey: `APPLICATION_REJECTED:${app.id}`,
         },
-      }),
-      prisma.authorAudit.create({
+      });
+      await tx.authorAudit.create({
         data: {
           actorUserId: actorId,
           action: 'CUSTOMER_REJECT',
@@ -255,8 +264,8 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
             internalNotes: body.data.internalNotes ?? null,
           }),
         },
-      }),
-    ]);
+      });
+    });
 
     return { customerAccessStatus: 'REJECTED' };
   });
@@ -305,5 +314,53 @@ export const authorCustomersRoutes: FastifyPluginAsync = async (fastify: Fastify
     ]);
 
     return { customerAccessStatus: 'SUSPENDED' };
+  });
+
+  // POST /api/author/customers/:userId/unsuspend
+  const unsuspendSchema = z.object({ reason: z.string().min(1).max(2000) });
+  fastify.post('/:userId/unsuspend', async (request: any, reply: any) => {
+    const actorId = request.user.userId;
+    const { userId } = request.params as { userId: string };
+    const body = unsuspendSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: 'reason is required.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+    if (user.customerAccessStatus !== 'SUSPENDED') {
+      return reply.status(400).send({ error: 'User is not suspended.' });
+    }
+
+    const fromStatus = user.customerAccessStatus;
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          isAlphaTester: true,
+          customerAccessStatus: 'APPROVED',
+          customerAccessUpdatedAt: new Date(),
+          customerAccessUpdatedById: actorId,
+          customerAccessReason: body.data.reason,
+        },
+      }),
+      prisma.authorAudit.create({
+        data: {
+          actorUserId: actorId,
+          action: 'CUSTOMER_UNSUSPEND',
+          targetType: 'User',
+          targetId: userId,
+          diffJson: JSON.stringify({
+            targetUserId: userId,
+            fromStatus,
+            toStatus: 'APPROVED',
+            reason: body.data.reason,
+          }),
+        },
+      }),
+    ]);
+
+    return { customerAccessStatus: 'APPROVED' };
   });
 };
