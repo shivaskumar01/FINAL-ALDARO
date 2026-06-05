@@ -5,6 +5,8 @@ node_modules/
 
 # Build outputs
 .next/
+.next.*
+.next-dev*
 out/
 dist/
 build/

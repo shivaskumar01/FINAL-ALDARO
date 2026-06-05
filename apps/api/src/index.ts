@@ -95,8 +95,12 @@ function getAllowedBrowserOrigins() {
 
   if (configuredAppBaseUrl) allowed.add(configuredAppBaseUrl);
   if (!isProduction) {
+    // A19 FIX: keep this in lock-step with DEV_ALLOWED_ORIGINS so the mutation
+    // origin check (authenticate) doesn't 403 a request that CORS already allowed.
     allowed.add('http://localhost:3000');
+    allowed.add('http://localhost:3001');
     allowed.add('http://127.0.0.1:3000');
+    allowed.add('http://127.0.0.1:3001');
   }
 
   return allowed;
@@ -311,6 +315,13 @@ fastify.decorate('authenticate', async (request: any, reply: any) => {
 
     const decoded = fastify.jwt.verify(token) as any;
 
+    // SECURITY: Reject refresh tokens and agent session tokens used as access tokens.
+    // Refresh tokens use a different secret (JWT_REFRESH_SECRET) so they'd normally
+    // fail verification, but guard against misconfiguration where secrets match.
+    if (decoded.type === 'refresh' || decoded.kind === 'agent-session') {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
     request.user = {
       userId: decoded.userId,
       role: decoded.role,
@@ -366,19 +377,13 @@ fastify.decorate('requireAuthor', async (request: any, reply: any) => {
     }
     
     if (user.accountStatus !== 'ACTIVE') {
-      await logSecurityEvent(request, userId, SecurityEventType.ROLE_GATED_ACCESS, { 
+      await logSecurityEvent(request, userId, SecurityEventType.ROLE_GATED_ACCESS, {
         path: request.url,
         reason: 'account_not_active',
         status: user.accountStatus,
       });
       return reply.status(403).send({ error: 'Account suspended' });
     }
-    
-    // Log successful author access for audit
-    await logSecurityEvent(request, userId, SecurityEventType.ROLE_GATED_ACCESS, { 
-      path: request.url,
-      granted: true,
-    });
   } catch (err) {
     console.error('Author verification failed:', err);
     return reply.status(500).send({ error: 'Internal error' });

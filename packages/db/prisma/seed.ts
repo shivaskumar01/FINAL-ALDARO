@@ -59,7 +59,12 @@ async function main() {
   // ==========================================================================
   // 2. Bootstrap Test Accounts (for development and testing)
   // ==========================================================================
-  if (process.env.NODE_ENV !== 'production') {
+  // A11 FIX: Demo/test accounts — including a known-password AUTHOR (admin) — must
+  // never be created by an accidental seed run (e.g. NODE_ENV unset against a real DB).
+  // Require an explicit positive opt-in in addition to the non-production guard, and
+  // allow the demo passwords to be overridden via env.
+  if (process.env.SEED_DEMO_USERS === 'true' && process.env.NODE_ENV !== 'production') {
+    console.warn('[seed] SEED_DEMO_USERS=true — creating demo/test accounts with known credentials. Never enable this in production.');
     // Integration test user
     const testPassword = process.env.TEST_USER_PASSWORD || crypto.randomBytes(16).toString('hex');
     const testHash = await bcrypt.hash(testPassword, 10);
@@ -79,8 +84,8 @@ async function main() {
     });
     console.log('Integration test user created');
 
-    // Tester account: test@aldaro.ai / TesterAccount21
-    const testerHash = await bcrypt.hash('TesterAccount21', 10);
+    // Tester account: test@aldaro.ai (password overridable via DEMO_TESTER_PASSWORD)
+    const testerHash = await bcrypt.hash(process.env.DEMO_TESTER_PASSWORD || 'TesterAccount21', 10);
     await prisma.user.upsert({
       where: { email: 'test@aldaro.ai' },
       update: { passwordHash: testerHash },
@@ -96,8 +101,8 @@ async function main() {
     });
     console.log('Tester account created: test@aldaro.ai');
 
-    // Author account: shivas@aldaro.ai / AuthorAccount21
-    const authorTestHash = await bcrypt.hash('AuthorAccount21', 10);
+    // Author account: shivas@aldaro.ai (password overridable via DEMO_AUTHOR_PASSWORD)
+    const authorTestHash = await bcrypt.hash(process.env.DEMO_AUTHOR_PASSWORD || 'AuthorAccount21', 10);
     await prisma.user.upsert({
       where: { email: 'shivas@aldaro.ai' },
       update: { passwordHash: authorTestHash, role: 'AUTHOR' },

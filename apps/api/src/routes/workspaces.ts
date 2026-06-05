@@ -126,6 +126,22 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           requestId: request.id,
         });
       }
+      if (err.message === 'PAYMENT_METHOD_REQUIRED') {
+        return reply.status(402).send({
+          errorCode: 'PAYMENT_METHOD_REQUIRED',
+          message: 'Add a payment method before launching a workspace.',
+          error: 'Add a payment method before launching a workspace.',
+          requestId: request.id,
+        });
+      }
+      if (err.message === 'BUDGET_LIMIT_EXCEEDED') {
+        return reply.status(402).send({
+          errorCode: 'BUDGET_LIMIT_EXCEEDED',
+          message: 'Monthly budget limit reached. Increase your limit or wait for the next cycle.',
+          error: 'Monthly budget limit reached. Increase your limit or wait for the next cycle.',
+          requestId: request.id,
+        });
+      }
       if (err.message === 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST') {
         return reply.status(409).send({
           errorCode: 'IDEMPOTENCY_KEY_CONFLICT',

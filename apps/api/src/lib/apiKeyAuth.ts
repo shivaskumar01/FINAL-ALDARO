@@ -27,6 +27,7 @@ export async function apiKeyAuthHandler(request: FastifyRequest, reply: FastifyR
 
   const apiKey = await prisma.apiKey.findUnique({
     where: { keyHash },
+    include: { user: { select: { accountStatus: true } } },
   });
 
   if (!apiKey) {
@@ -52,6 +53,18 @@ export async function apiKeyAuthHandler(request: FastifyRequest, reply: FastifyR
       errorCode: 'API_KEY_EXPIRED',
       message: 'This API key has expired.',
       error: 'This API key has expired.',
+      requestId: request.id,
+    });
+  }
+
+  // A9 FIX: API keys must respect account suspension. Unlike JWT sessions (which
+  // re-check accountStatus on /auth/refresh within 15 min), API keys never expire,
+  // so a suspended/blocked user would otherwise retain full API access indefinitely.
+  if (apiKey.user.accountStatus !== 'ACTIVE') {
+    return reply.status(403).send({
+      errorCode: 'ACCOUNT_SUSPENDED',
+      message: 'This account is not active.',
+      error: 'This account is not active.',
       requestId: request.id,
     });
   }

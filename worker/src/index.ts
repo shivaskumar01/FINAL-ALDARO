@@ -11,6 +11,7 @@ import { volumeManagerTick } from './jobs/volume-manager';
 import { updateSpotPrices } from './jobs/spot-pricing';
 import { budgetMonitorTick } from './jobs/budget-monitor';
 import { burstOrchestratorTick } from './jobs/burst-orchestrator';
+import { processWebhookDeliveries } from './jobs/webhook-delivery';
 import { getProxmoxProvider } from './providers/proxmoxFleet';
 import crypto from 'crypto';
 
@@ -44,6 +45,7 @@ const VOLUME_MANAGER_TICK_MS = 15 * 1000;
 const SPOT_PRICING_TICK_MS = 5 * 60 * 1000; // 5 minutes
 const BUDGET_MONITOR_TICK_MS = 15 * 60 * 1000; // 15 minutes
 const BURST_ORCHESTRATOR_TICK_MS = 2 * 60 * 1000; // 2 minutes
+const WEBHOOK_DELIVERY_TICK_MS = 30 * 1000;
 const FLEET_AGG_TODAY_REFRESH_MS = 60 * 60 * 1000; // hourly
 const RETENTION_TICK_MS = 60 * 60 * 1000; // 1 hour (runs once when conditions met)
 const LEADER_LOCK_ID = 1001; // Postgres advisory lock ID for worker leader
@@ -221,6 +223,7 @@ let lastVolumeManagerTick = 0;
 let lastSpotPricingTick = 0;
 let lastBudgetMonitorTick = 0;
 let lastBurstOrchestratorTick = 0;
+let lastWebhookDeliveryTick = 0;
 let lastFleetAggTick = 0;
 let lastFleetAggDate: string | null = null; // Run backfill once per day
 
@@ -343,6 +346,16 @@ async function leaderTick() {
       await burstOrchestratorTick(prisma);
     } catch (err) {
       console.error('Error in burstOrchestratorTick:', err);
+    }
+  }
+
+  // Webhook Delivery Tick (A4: drain PENDING webhook deliveries that nothing else sent)
+  if (now - lastWebhookDeliveryTick >= WEBHOOK_DELIVERY_TICK_MS) {
+    lastWebhookDeliveryTick = now;
+    try {
+      await processWebhookDeliveries(prisma);
+    } catch (err) {
+      console.error('Error in processWebhookDeliveries:', err);
     }
   }
 

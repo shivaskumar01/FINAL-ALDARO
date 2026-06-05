@@ -1,7 +1,9 @@
 import os, json, hmac, hashlib, requests
 
 API_BASE = os.getenv("ALDARO_API_BASE_URL")
-SECRET = os.getenv("ALDARO_AGENT_SHARED_SECRET")
+# A3: prefer the per-workspace secret injected at provision time; fall back to the
+# global shared secret only for legacy/dev.
+SECRET = os.getenv("ALDARO_WORKSPACE_AGENT_SECRET") or os.getenv("ALDARO_AGENT_SHARED_SECRET")
 WORKSPACE_ID = os.getenv("ALDARO_WORKSPACE_ID")
 
 def sign(body: bytes) -> str:

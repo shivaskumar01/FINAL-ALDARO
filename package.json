@@ -25,9 +25,10 @@
     "audit": "npm audit --audit-level=high"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.4",
+    "serialize-javascript": "^7.0.5",
     "diff": "^8.0.3",
-    "fast-jwt": "^5.0.6"
+    "fast-jwt": "^5.0.6",
+    "axios": "^1.17.0"
   },
   "devDependencies": {
     "@types/chai": "^5.2.0",

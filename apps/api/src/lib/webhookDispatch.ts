@@ -18,7 +18,9 @@ async function isBlockedResolvedIp(hostname: string): Promise<boolean> {
     const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
     const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
     const all = [...addresses, ...addresses6];
-    if (all.length === 0) return false; // Let fetch handle DNS failure
+    // A15 FIX: fail closed — if the host doesn't resolve, block rather than allow,
+    // so an attacker can't bypass the SSRF guard by defeating resolve4/resolve6.
+    if (all.length === 0) return true;
     for (const ip of all) {
       if (ip === '127.0.0.1' || ip === '::1' || ip === '0.0.0.0') return true;
       if (/^10\./.test(ip)) return true;
@@ -29,7 +31,7 @@ async function isBlockedResolvedIp(hostname: string): Promise<boolean> {
     }
     return false;
   } catch {
-    return false; // DNS resolution failure — let fetch handle it
+    return true; // A15 FIX: fail closed on DNS resolution failure
   }
 }
 

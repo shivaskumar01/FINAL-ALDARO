@@ -115,32 +115,12 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       },
     });
 
-    let updatedRun = run;
-    try {
-      const { workspaceId } = await provisioner.provision({
-        runId: run.id,
-        gpuType: run.gpuType,
-        gpuCount: run.gpuCount,
-        env: body.env,
-      });
-
-      updatedRun = await prisma.run.update({
-        where: { id: run.id },
-        data: { 
-          status: 'provisioning',
-          upstreamInstanceId: workspaceId,
-          infraStartedAt: new Date() // Cross-check timestamp
-        },
-      });
-    } catch (err) {
-      console.error('Provisioning failed:', err);
-      updatedRun = await prisma.run.update({
-        where: { id: run.id },
-        data: { status: 'failed', errorMessage: 'Provisioning failed' },
-      });
-    }
-
-    return reply.status(201).send(updatedRun);
+    // A8 FIX: do not provision synchronously in the request path. The old inline
+    // provisioner.provision() blocked the HTTP request on Proxmox, skipped waitForTask
+    // (configuring the VM before the clone finished), and used a race-prone VMID picker.
+    // The worker's runExecutorTick picks up 'queued' runs and provisions them safely
+    // (Serializable VMID allocation + clone semaphore + waitForTask).
+    return reply.status(201).send(run);
   });
 
   // GET /v1/projects/:project_id/runs
@@ -413,7 +393,7 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       });
     }
 
-    // Create a new run with same config
+    // Create a new run with same config. A8 FIX: enqueue-only — the worker provisions it.
     const newRun = await prisma.run.create({
       data: {
         projectId: oldRun.projectId,
@@ -428,30 +408,7 @@ export const runRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       },
     });
 
-    try {
-      const { workspaceId } = await provisioner.provision({
-        runId: newRun.id,
-        gpuType: newRun.gpuType,
-        gpuCount: newRun.gpuCount,
-        env: newRun.envJson ? (() => { try { return JSON.parse(newRun.envJson); } catch { return undefined; } })() : undefined,
-      });
-
-      const updatedRun = await prisma.run.update({
-        where: { id: newRun.id },
-        data: { 
-          status: 'provisioning',
-          upstreamInstanceId: workspaceId,
-          infraStartedAt: new Date()
-        },
-      });
-      return reply.status(201).send(updatedRun);
-    } catch (err) {
-      await prisma.run.update({
-        where: { id: newRun.id },
-        data: { status: 'failed', errorMessage: 'Retry provisioning failed' },
-      });
-      return reply.status(500).send({ error: 'Provisioning failed' });
-    }
+    return reply.status(201).send(newRun);
   });
 
   // POST /v1/runs/:run_id/events (Event Ingestion from Agent)

@@ -36,6 +36,29 @@ function generateSecureToken(length: number = 32): string {
   return crypto.randomBytes(length).toString('hex');
 }
 
+/**
+ * A12: compute month-to-date spend (cents) for a user, mirroring budget-monitor:
+ * closed sessions count their billedCents; running sessions add an elapsed estimate.
+ */
+async function computeUserMtdSpendCents(userId: string): Promise<number> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sessions = await prisma.usageSession.findMany({
+    where: { userId, startTime: { gte: monthStart } },
+    select: { billedCents: true, status: true, startTime: true, pricePerHourCents: true },
+  });
+  let cents = 0;
+  for (const s of sessions) {
+    if (s.status === 'ENDED') {
+      cents += s.billedCents;
+    } else if (s.status === 'RUNNING') {
+      const elapsed = Math.max(0, (now.getTime() - s.startTime.getTime()) / 1000);
+      cents += Math.ceil((elapsed * s.pricePerHourCents) / 3600);
+    }
+  }
+  return cents;
+}
+
 export class WorkspaceService {
   async launch(userId: string, gpuType: string, region: string, operationKey: string, requestHash: string, maxDurationMinutes?: number, customImage?: string, registryCredentialId?: string) {
     const existing = await prisma.workspaceLaunchOperation.findUnique({
@@ -160,6 +183,24 @@ export class WorkspaceService {
     // 1. Quota check
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error('USER_NOT_FOUND');
+
+    // A2: optionally require a valid payment method before incurring metered GPU cost.
+    // Off by default (REQUIRE_PAYMENT_METHOD=true to enforce) so it doesn't change the
+    // manual-approval alpha flow unless the operator opts in.
+    if (process.env.REQUIRE_PAYMENT_METHOD === 'true' && user.paymentStatus !== 'VALID') {
+      throw new Error('PAYMENT_METHOD_REQUIRED');
+    }
+
+    // A12: defense-in-depth — block launch if already over a hard budget limit. The
+    // budget-monitor enforces this asynchronously (every 15 min); this closes the
+    // inter-tick window where a user could keep launching past their cap.
+    if (user.monthlySoftLimitCents && user.monthlySoftLimitCents > 0 && user.hardLimitAction === 'AUTO_TERMINATE') {
+      const mtdCents = await computeUserMtdSpendCents(userId);
+      if (mtdCents >= user.monthlySoftLimitCents) {
+        throw new Error('BUDGET_LIMIT_EXCEEDED');
+      }
+    }
+
     const activeCount = await prisma.workspace.count({
       where: {
         assignedUserId: userId,

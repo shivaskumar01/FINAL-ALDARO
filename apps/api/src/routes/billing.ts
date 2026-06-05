@@ -9,6 +9,20 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export const billingRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
+  // A1 FIX: Stripe webhook signature verification needs the EXACT raw request bytes.
+  // Without a raw-body parser, request.rawBody is undefined and constructEvent() always
+  // throws -> every webhook 400s -> setup_intent.succeeded never confirms a card.
+  // This content-type parser is encapsulated to the /billing plugin scope: it preserves
+  // the raw string for the webhook while still parsing JSON for setup-intent/status.
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as any).rawBody = body;
+    try {
+      done(null, body ? JSON.parse(body as string) : {});
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
+
   fastify.post('/setup-intent', {
     preHandler: [fastify.authenticate as any, fastify.requireCustomerApproved as any, fastify.requireReauth as any],
   }, async (request: any, reply) => {

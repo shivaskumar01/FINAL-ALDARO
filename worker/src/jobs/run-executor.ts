@@ -28,6 +28,31 @@ export async function runExecutorTick(prisma: PrismaClient) {
   await processRunningRuns(prisma);
   await processUploadingArtifactsRuns(prisma);
   await processTimedOutRuns(prisma);
+  await processUnreportedRunBilling(prisma);
+}
+
+/**
+ * A5 FIX: durable retry for run billing. reportRunBilling is best-effort at finalize;
+ * if Stripe was unreachable, stripeUsageReported stays false and the run would never be
+ * billed (runs don't use the meter-event outbox). Sweep finished-but-unreported runs and
+ * retry. Safe/idempotent: reportRunBilling re-checks the flag and Stripe dedupes on run.id.
+ */
+async function processUnreportedRunBilling(prisma: PrismaClient) {
+  const runs = await prisma.run.findMany({
+    where: {
+      stripeUsageReported: false,
+      billedSeconds: { gt: 0 },
+      status: { in: ['completed', 'failed', 'canceled', 'timed_out'] },
+      user: { stripeCustomerId: { not: null } },
+    },
+    select: { id: true },
+    orderBy: { updatedAt: 'asc' },
+    take: 25,
+  });
+
+  for (const run of runs) {
+    await reportRunBilling(prisma, run.id);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

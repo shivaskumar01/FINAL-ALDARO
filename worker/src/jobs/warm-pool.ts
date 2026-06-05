@@ -3,6 +3,38 @@ import { getProxmoxProvider, ProxmoxFleetProvider } from '../providers/proxmoxFl
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import axios from 'axios';
+import { deriveWorkspaceAgentSecret } from '@aldaro/shared';
+
+/**
+ * A3: per-workspace agent secret. The base-image bootstrap (cloud-init) must export this
+ * as ALDARO_WORKSPACE_AGENT_SECRET inside the VM so the in-VM agent signs heartbeat /
+ * verify-result with it. The global ALDARO_AGENT_SHARED_SECRET must never be placed in a
+ * customer VM. The control plane recomputes this value to verify callbacks.
+ */
+function workspaceAgentSecret(workspaceId: string): string {
+  const global = process.env.ALDARO_AGENT_SHARED_SECRET || '';
+  return deriveWorkspaceAgentSecret(global, workspaceId);
+}
+
+function signGatewayRequest(body: object): string {
+  const secret = process.env.GATEWAY_SERVICE_SECRET;
+  if (!secret) return '';
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
+}
+
+async function releaseGatewayPorts(workspaceId: string) {
+  const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || 'http://localhost:5001';
+  const body = {
+    workspace_id: workspaceId,
+    timestamp: Date.now(),
+    nonce: uuidv4(),
+  };
+  const signature = signGatewayRequest(body);
+  await axios.post(`${gatewayUrl}/internal/gateway/release`, body, {
+    headers: signature ? { 'x-gateway-signature': signature } : {},
+    timeout: 10_000,
+  });
+}
 
 /**
  * Warm Pool Management
@@ -63,17 +95,20 @@ function deriveVlanTag(id: string): number {
  * Returns true if acquired, false if at capacity.
  */
 async function acquireCloneSemaphore(prisma: PrismaClient, node: string, workspaceId: string): Promise<boolean> {
-  const active = await prisma.cloneSemaphore.count({
-    where: { proxmoxNode: node, releasedAt: null },
-  });
-  if (active >= MAX_CONCURRENT_CLONES) {
-    console.log(`[WarmPool] Clone semaphore full for ${node} (${active}/${MAX_CONCURRENT_CLONES})`);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const active = await tx.cloneSemaphore.count({
+        where: { proxmoxNode: node, releasedAt: null },
+      });
+      if (active >= MAX_CONCURRENT_CLONES) return false;
+      await tx.cloneSemaphore.create({
+        data: { proxmoxNode: node, workspaceId },
+      });
+      return true;
+    });
+  } catch {
     return false;
   }
-  await prisma.cloneSemaphore.create({
-    data: { proxmoxNode: node, workspaceId },
-  });
-  return true;
 }
 
 /**
@@ -337,6 +372,9 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
     }
 
     // 8. Set cloud-init (agent bootstrap)
+    // A3 TODO(bootstrap): the base-image cloud-init must export
+    //   ALDARO_WORKSPACE_AGENT_SECRET=workspaceAgentSecret(workspaceId)
+    // for the in-VM agent. Do NOT inject the global ALDARO_AGENT_SHARED_SECRET.
     await proxmox.setCloudInit(gpu.node.name, newVmid, {
       ciuser: 'aldaro',
       ipconfig0: 'ip=dhcp',
@@ -573,6 +611,8 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
     const s3Env = await provisionS3Bucket(prisma, ws);
 
     // Cloud-init with S3 credentials injected
+    // A3 TODO(bootstrap): also export ALDARO_WORKSPACE_AGENT_SECRET=workspaceAgentSecret(ws.id)
+    // for the in-VM agent (never the global ALDARO_AGENT_SHARED_SECRET).
     const cloudInitConfig: any = {
       ciuser: 'aldaro',
       ipconfig0: 'ip=dhcp',
@@ -735,6 +775,8 @@ async function sendCustomImageStartup(prisma: PrismaClient, ws: any): Promise<vo
   const startupPayload: any = {
     custom_image: fullImage,
     gpu_passthrough: true,
+    // A3: hand the in-VM agent its per-workspace callback secret (never the global one).
+    workspace_agent_secret: workspaceAgentSecret(ws.id),
   };
 
   // If workspace has S3 bucket credentials, include them for checkpoint storage
@@ -989,6 +1031,13 @@ export async function terminateWorkspace(prisma: PrismaClient, id: string, reaso
       where: { id: ws.gpuAllocation.id },
       data: { releasedAt: new Date() },
     });
+  }
+
+  // Release gateway ports (best effort — if gateway is down, log and continue)
+  try {
+    await releaseGatewayPorts(ws.id);
+  } catch (err) {
+    console.error(`[WarmPool] Failed to release gateway ports for workspace ${ws.id}:`, err);
   }
 
   // Release ports

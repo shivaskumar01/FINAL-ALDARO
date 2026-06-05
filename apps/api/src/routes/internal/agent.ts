@@ -2,6 +2,10 @@ import { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { z } from 'zod';
+import { deriveWorkspaceAgentSecret } from '@aldaro/shared';
+
+// Workspace states from which an agent callback must NOT revive the workspace.
+const TERMINAL_WORKSPACE_STATES = new Set(['TERMINATED', 'TERMINATING', 'FAILED']);
 
 /**
  * Internal Agent API
@@ -149,10 +153,17 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
     }
   });
 
+  // A3 FIX: accept the legacy global-secret signature only when explicitly allowed.
+  // Defaults to allowed in non-production (local/dev convenience) and DENIED in production,
+  // so a real fleet must use per-workspace secrets. Set ALLOW_LEGACY_AGENT_SECRET=true to
+  // bridge a migration window.
+  const allowLegacyAgentSecret =
+    process.env.ALLOW_LEGACY_AGENT_SECRET === 'true' ||
+    (process.env.ALLOW_LEGACY_AGENT_SECRET == null && process.env.NODE_ENV !== 'production');
+
   // HMAC middleware for internal endpoints
   fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
     const signature = request.headers['x-aldaro-signature'] as string;
-    const agentId = request.headers['x-aldaro-agent-id'] as string;
     const rawBody = (request as any).rawBody as string;
 
     if (!signature) {
@@ -163,13 +174,27 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
       return reply.status(500).send({ error: 'Server misconfigured' });
     }
 
-    // Validate HMAC with timing-safe comparison
-    if (!validateSignature(rawBody, signature, secret)) {
+    const body = request.body as { workspace_id?: string; nonce?: string; timestamp?: number };
+
+    // A3 FIX: bind the signature to the specific workspace. The agent signs with a
+    // per-workspace secret derived from the global secret (injected at provision time),
+    // and we recompute it here. This prevents a customer with root on their own VM from
+    // forging callbacks for any other workspace_id.
+    const workspaceId = typeof body?.workspace_id === 'string' ? body.workspace_id : null;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'Missing workspace_id' });
+    }
+
+    const perWorkspaceSecret = deriveWorkspaceAgentSecret(secret, workspaceId);
+    const validPerWorkspace = validateSignature(rawBody, signature, perWorkspaceSecret);
+    const validLegacy =
+      !validPerWorkspace && allowLegacyAgentSecret && validateSignature(rawBody, signature, secret);
+
+    if (!validPerWorkspace && !validLegacy) {
       return reply.status(401).send({ error: 'Invalid signature' });
     }
 
     // Replay protection
-    const body = request.body as { nonce?: string; timestamp?: number };
     const replayCheck = checkReplayProtection(body.nonce, body.timestamp);
     if (!replayCheck.valid) {
       return reply.status(401).send({ error: replayCheck.error });
@@ -201,6 +226,13 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
         rawLog: raw_log,
       },
     });
+
+    // A17 FIX: keep the verification record for audit, but never revive a workspace
+    // that is already terminating/terminated/failed (a late or forged result must not
+    // flip it back to RUNNING_ASSIGNED/WARM_AVAILABLE).
+    if (TERMINAL_WORKSPACE_STATES.has(workspace.status)) {
+      return { ok: true, ignored: 'workspace_terminal' };
+    }
 
     if (result.pass) {
       await prisma.workspace.update({
@@ -238,8 +270,14 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
       return reply.status(404).send({ error: 'Workspace not found' });
     }
 
+    // A17 FIX: ignore heartbeats for terminal workspaces so a (possibly forged) agent
+    // cannot keep a terminated/idle workspace looking alive or refresh its metrics.
+    if (TERMINAL_WORKSPACE_STATES.has(workspace.status)) {
+      return { ok: true, ignored: 'workspace_terminal' };
+    }
+
     const now = new Date();
-    
+
     // Build update data
     const updateData: any = {
       lastAgentHeartbeatAt: now,
