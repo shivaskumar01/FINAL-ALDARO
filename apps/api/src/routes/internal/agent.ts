@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { deriveWorkspaceAgentSecret } from '@aldaro/shared';
+import { setIfAbsentWithTtl } from '../../lib/ephemeralStore';
 
 // Workspace states from which an agent callback must NOT revive the workspace.
 const TERMINAL_WORKSPACE_STATES = new Set(['TERMINATED', 'TERMINATING', 'FAILED']);
@@ -19,32 +20,13 @@ const TERMINAL_WORKSPACE_STATES = new Set(['TERMINATED', 'TERMINATING', 'FAILED'
 
 const prisma = new PrismaClient();
 
-// In-memory nonce cache (in production, use Redis with TTL)
-const usedNonces = new Map<string, number>();
-// SECURITY: Nonce TTL matches MAX_TIMESTAMP_DRIFT_MS — payloads older than 60s
-// are already rejected by timestamp, so nonces only need to live that long.
-// In-memory Map accepted for V1 (single API instance); revisit with Redis post-launch.
+// A14: nonce replay cache moved to the shared ephemeral store (Redis when REDIS_URL is
+// set, else in-memory). A per-instance Map was replay-bypassable across API replicas — an
+// attacker could replay a captured agent callback against a different replica.
+// Nonce TTL matches MAX_TIMESTAMP_DRIFT_MS: payloads older than 60s are already rejected
+// by the timestamp check, so nonces only need to live that long.
 const NONCE_TTL_MS = 60 * 1000; // 60 seconds
 const MAX_TIMESTAMP_DRIFT_MS = 60 * 1000; // 1 minute
-const MAX_NONCE_CACHE_SIZE = 100_000; // Prevent unbounded memory growth
-
-// Cleanup old nonces periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, timestamp] of usedNonces) {
-    if (now - timestamp > NONCE_TTL_MS) {
-      usedNonces.delete(nonce);
-    }
-  }
-  // Emergency eviction if cache exceeds max size
-  if (usedNonces.size > MAX_NONCE_CACHE_SIZE) {
-    const entries = [...usedNonces.entries()].sort((a, b) => a[1] - b[1]);
-    const toRemove = entries.slice(0, usedNonces.size - MAX_NONCE_CACHE_SIZE);
-    for (const [nonce] of toRemove) {
-      usedNonces.delete(nonce);
-    }
-  }
-}, 60 * 1000);
 
 const verifyResultSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -109,7 +91,7 @@ function validateSignature(rawBody: string, signature: string, secret: string): 
   return timingSafeEqual(signature, expectedSignature);
 }
 
-function checkReplayProtection(nonce: string | undefined, timestamp: number | undefined): { valid: boolean; error?: string } {
+async function checkReplayProtection(nonce: string | undefined, timestamp: number | undefined): Promise<{ valid: boolean; error?: string }> {
   // Skip replay check in development if no nonce provided
   if (process.env.NODE_ENV === 'development' && !nonce) {
     return { valid: true };
@@ -125,13 +107,11 @@ function checkReplayProtection(nonce: string | undefined, timestamp: number | un
     return { valid: false, error: 'Timestamp too old or in future' };
   }
 
-  // Check nonce uniqueness
-  if (usedNonces.has(nonce)) {
+  // Atomic check-and-set: false => the nonce was already used (replay).
+  const fresh = await setIfAbsentWithTtl(`agent:nonce:${nonce}`, '1', Math.ceil(NONCE_TTL_MS / 1000));
+  if (!fresh) {
     return { valid: false, error: 'Nonce already used (replay attack)' };
   }
-
-  // Store nonce
-  usedNonces.set(nonce, timestamp);
 
   return { valid: true };
 }
@@ -195,7 +175,7 @@ export const internalAgentRoutes: FastifyPluginAsync = async (fastify: FastifyIn
     }
 
     // Replay protection
-    const replayCheck = checkReplayProtection(body.nonce, body.timestamp);
+    const replayCheck = await checkReplayProtection(body.nonce, body.timestamp);
     if (!replayCheck.valid) {
       return reply.status(401).send({ error: replayCheck.error });
     }

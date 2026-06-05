@@ -11,6 +11,7 @@ import {
 } from '../lib/security';
 import crypto from 'crypto';
 import { resolveCustomerAccessStatus } from '../lib/customerAccess';
+import { revokeJti } from '../lib/ephemeralStore';
 import {
   buildPasswordVersion,
   buildRefreshToken,
@@ -149,7 +150,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
   }, async (request, reply) => {
     const { email: rawEmail, password } = loginSchema.parse(request.body);
     const email = normalizeEmail(rawEmail);
-    const isCliClient = request.headers['x-aldaro-client'] === 'cli';
+    // SECURITY: Detect CLI by absence of browser indicators (cookie + origin).
+    // Browsers always send Origin on cross-origin POST; CLI clients don't use cookies.
+    // This prevents browser JS from spoofing x-aldaro-client to bypass Origin checks.
+    const hasCookies = !!(request.cookies && Object.keys(request.cookies).length > 0);
+    const hasOrigin = !!((request.headers as any).origin);
+    const isCliClient = !hasCookies && !hasOrigin && request.headers['x-aldaro-client'] === 'cli';
 
     // SECURITY: Validate Origin header on login to prevent cross-origin login CSRF.
     // CLI clients don't send Origin, so skip for them.
@@ -159,7 +165,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       const appBaseUrl = process.env.APP_BASE_URL;
       const isValidOrigin = isProd
         ? (origin === appBaseUrl)
-        : (!origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'));
+        : (!origin || ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'].includes(origin));
       if (!isValidOrigin) {
         return reply.status(403).send({ error: 'Forbidden origin.' });
       }
@@ -235,6 +241,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
         // SECURITY: verify signature, don't just decode — prevents forged userId in logs
         const decoded = fastify.jwt.verify(token) as any;
         userId = decoded?.userId;
+        // A13: revoke this access token's jti for its remaining TTL so a stolen token
+        // cannot be used after logout (closes the 15-min stateless-JWT window).
+        if (decoded?.jti) {
+          const ttl = decoded.exp ? Math.max(1, decoded.exp - Math.floor(Date.now() / 1000)) : 900;
+          await revokeJti(decoded.jti, ttl);
+        }
       }
     } catch {}
 
@@ -353,7 +365,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     const accessToken = fastify.jwt.sign(buildSessionTokenPayload(user));
     const newRefreshToken = buildRefreshToken(user, refreshSecret);
 
-    const isCliClient = request.headers['x-aldaro-client'] === 'cli';
+    // SECURITY: Detect CLI by absence of browser indicators (cookie + origin).
+    // Browsers always send Origin on cross-origin POST; CLI clients don't use cookies.
+    // This prevents browser JS from spoofing x-aldaro-client to bypass Origin checks.
+    const hasCookies = !!(request.cookies && Object.keys(request.cookies).length > 0);
+    const hasOrigin = !!((request.headers as any).origin);
+    const isCliClient = !hasCookies && !hasOrigin && request.headers['x-aldaro-client'] === 'cli';
     const redirect_to = getRedirectForUser(user);
     const customerAccessStatus = user.role === 'CUSTOMER'
       ? resolveCustomerAccessStatus(user)

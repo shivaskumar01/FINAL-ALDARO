@@ -25,6 +25,7 @@ import { userRoutes } from './routes/users';
 import { publicRoutes } from './routes/public';
 import { resolveCustomerAccessStatus } from './lib/customerAccess';
 import { logSecurityEvent, SecurityEventType } from './lib/security';
+import { isJtiRevoked } from './lib/ephemeralStore';
 import { SESSION_COOKIE_NAME } from './lib/session';
 import { ALDARO_VERSION } from './version';
 
@@ -319,6 +320,11 @@ fastify.decorate('authenticate', async (request: any, reply: any) => {
     // Refresh tokens use a different secret (JWT_REFRESH_SECRET) so they'd normally
     // fail verification, but guard against misconfiguration where secrets match.
     if (decoded.type === 'refresh' || decoded.kind === 'agent-session') {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
+    // A13: reject access tokens whose jti was revoked (logout / ban) within their 15-min life.
+    if (decoded.jti && await isJtiRevoked(decoded.jti)) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
 
