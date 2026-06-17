@@ -1,4 +1,4 @@
-# Restore Drill Report — 2026-03-11
+# Restore Drill Report, 2026-03-11
 
 ## Outcome
 **PARTIAL PASS (local simulation only)**  

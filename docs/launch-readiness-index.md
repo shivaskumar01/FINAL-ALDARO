@@ -26,9 +26,9 @@ Single source of truth for launch readiness.
 ## What Still Blocks Launch
 
 **Code-level gaps** (no infra needed):
-1. ~~Partial unique index for one RUNNING session per workspace~~ — **CLOSED** (migration applied, 8 constraint tests pass)
-2. Error surface response capture from running production-mode API — **L1 verified** (10 responses captured locally)
-3. Cleanup durability matrix scenarios — **L1 verified** (4 scenarios exercised locally)
+1. ~~Partial unique index for one RUNNING session per workspace~~, **CLOSED** (migration applied, 8 constraint tests pass)
+2. Error surface response capture from running production-mode API, **L1 verified** (10 responses captured locally)
+3. Cleanup durability matrix scenarios, **L1 verified** (4 scenarios exercised locally)
 
 **Infrastructure-dependent** (blocked on access):
 1. Proxmox credentials, Stripe test keys, node names, PCI addresses
@@ -47,37 +47,37 @@ Single source of truth for launch readiness.
 
 ---
 
-## P0 — Must be L2 before launch
+## P0, Must be L2 before launch
 
 | # | Subsystem | Audit | Remediated | Local Verified | Real-Env Proof |
 |---|---|---|---|---|---|
-| 1 | **Staging readiness** | [staging-bootstrap-runbook.md](staging-bootstrap-runbook.md) | N/A | L1 partial — worker boots, reaches Proxmox boundary | Not started |
-| 2 | **Billing parity** | [billing-path-audit.md](billing-path-audit.md), [billing-invariants.md](billing-invariants.md) | **Yes** — atomic close, P2025 race fix, attemptCount fix | **L1** — 24 tests pass, SQL clean | Not started |
-| 3 | **Terminate outage recovery** | [cleanup-durability-matrix.md](cleanup-durability-matrix.md) | **Yes** — cleanup atomicity, stale sweeper, dead-letter | **L1** — 23 gateway tests pass | Not started |
-| 4 | **Last-GPU contention** | [worker-risk-audit.md](worker-risk-audit.md) | **Partial** — atomic GPU alloc, no DB-level lock on GPU selection | Not tested | Not started |
-| 5 | **Restore drill** | — | N/A | Not tested | Not started |
-| 6 | **Stack leakage** | [error-surface-audit.md](error-surface-audit.md) | **Yes** — findUniqueOrThrow removed, .flatten() server-only | **L1** — production-mode responses captured, all clean | Not started |
-| 7 | **Cleanup durability** | [cleanup-durability-matrix.md](cleanup-durability-matrix.md), [worker-failure-matrix.md](worker-failure-matrix.md) | **Yes** — atomic session finalize, agent timeout fix, GPU alloc atomic | **L1** — 4 stale-state scenarios exercised, final state clean | Not started |
+| 1 | **Staging readiness** | [staging-bootstrap-runbook.md](staging-bootstrap-runbook.md) | N/A | L1 partial, worker boots, reaches Proxmox boundary | Not started |
+| 2 | **Billing parity** | [billing-path-audit.md](billing-path-audit.md), [billing-invariants.md](billing-invariants.md) | **Yes**, atomic close, P2025 race fix, attemptCount fix | **L1**, 24 tests pass, SQL clean | Not started |
+| 3 | **Terminate outage recovery** | [cleanup-durability-matrix.md](cleanup-durability-matrix.md) | **Yes**, cleanup atomicity, stale sweeper, dead-letter | **L1**, 23 gateway tests pass | Not started |
+| 4 | **Last-GPU contention** | [worker-risk-audit.md](worker-risk-audit.md) | **Partial**, atomic GPU alloc, no DB-level lock on GPU selection | Not tested | Not started |
+| 5 | **Restore drill** |, | N/A | Not tested | Not started |
+| 6 | **Stack leakage** | [error-surface-audit.md](error-surface-audit.md) | **Yes**, findUniqueOrThrow removed, .flatten() server-only | **L1**, production-mode responses captured, all clean | Not started |
+| 7 | **Cleanup durability** | [cleanup-durability-matrix.md](cleanup-durability-matrix.md), [worker-failure-matrix.md](worker-failure-matrix.md) | **Yes**, atomic session finalize, agent timeout fix, GPU alloc atomic | **L1**, 4 stale-state scenarios exercised, final state clean | Not started |
 
 ---
 
-## P1 — Must be at least L1 before launch
+## P1, Must be at least L1 before launch
 
 | Subsystem | Audit | Remediated | Current Level |
 |---|---|---|---|
-| Auth (login/refresh/logout) | — | — | L0 |
-| CSRF enforcement | — | — | L0 |
-| CORS policy | — | — | L0 |
-| Rate limiting | — | — | L0 |
-| Approval flow | [approval-flow-audit.md](approval-flow-audit.md) | — | L0 |
-| Cross-tenant isolation | — | — | L0 |
-| Gateway routes | [gateway-local-validation.md](gateway-local-validation.md) | **Yes** — DB leases, reconciliation, HMAC, ephemeral hard-fail | **L1** — 23 tests pass |
-| Worker leader lock | — | — | L1 — [locally verified](local-proof-postgres-worker-2026-03-12.md) |
-| Warm pool provisioning | [worker-risk-audit.md](worker-risk-audit.md) | **Yes** — atomic GPU alloc, agent timeout fix | L1 partial |
-| Idle termination | — | — | L0 |
-| Incident detection | — | — | L0 |
-| Email outbox | — | — | L0 |
-| DB constraints | [db-constraint-review.md](db-constraint-review.md) | 14/14 upserts DB-backed | L0 — review only |
+| Auth (login/refresh/logout) |, |, | L0 |
+| CSRF enforcement |, |, | L0 |
+| CORS policy |, |, | L0 |
+| Rate limiting |, |, | L0 |
+| Approval flow | [approval-flow-audit.md](approval-flow-audit.md) |, | L0 |
+| Cross-tenant isolation |, |, | L0 |
+| Gateway routes | [gateway-local-validation.md](gateway-local-validation.md) | **Yes**, DB leases, reconciliation, HMAC, ephemeral hard-fail | **L1**, 23 tests pass |
+| Worker leader lock |, |, | L1, [locally verified](local-proof-postgres-worker-2026-03-12.md) |
+| Warm pool provisioning | [worker-risk-audit.md](worker-risk-audit.md) | **Yes**, atomic GPU alloc, agent timeout fix | L1 partial |
+| Idle termination |, |, | L0 |
+| Incident detection |, |, | L0 |
+| Email outbox |, |, | L0 |
+| DB constraints | [db-constraint-review.md](db-constraint-review.md) | 14/14 upserts DB-backed | L0, review only |
 
 ---
 
@@ -87,10 +87,10 @@ Single source of truth for launch readiness.
 |---|---|---|---|
 | 1: Billing atomicity | workspaceService.ts, workspace-cleanup.ts, workspace-metering.ts | 24 pass | **Verified** |
 | 2: Gateway durability | gateway/src/index.ts | 23 pass | **Verified** |
-| 3: Error surface | 5 route files, workspaceService.ts | Response capture | **Verified** — production-mode responses captured, all clean |
+| 3: Error surface | 5 route files, workspaceService.ts | Response capture | **Verified**, production-mode responses captured, all clean |
 | 5: Worker provisioning | warm-pool.ts (3 fixes) | Cleanup scenarios | Remediated + 4 cleanup scenarios exercised locally |
 | Race condition fix | workspaceService.ts:endUsageSession | Covered in billing tests | **Found and fixed during verification** |
-| Ephemeral hard-fail | gateway/src/index.ts | — | Added |
+| Ephemeral hard-fail | gateway/src/index.ts |, | Added |
 
 ---
 
@@ -98,7 +98,7 @@ Single source of truth for launch readiness.
 
 | Item | Status |
 |---|---|
-| Local Postgres | Ready — PostgreSQL 15.17 |
+| Local Postgres | Ready, PostgreSQL 15.17 |
 | Local API | Runnable |
 | Local Worker | Runnable (Postgres) |
 | Local Gateway | Runnable, DB-backed |

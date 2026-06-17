@@ -175,11 +175,11 @@ WHERE constraint_schema = 'public' AND constraint_type IN ('PRIMARY KEY', 'UNIQU
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| Row counts match but data is corrupted | Counts are identical but specific rows have NULL where they shouldn't — sample data diff catches some of this but not all |
-| Restore warnings about "already exists" | pg_restore may emit warnings if sequences or extensions conflict — check if they're fatal |
-| Auth works but passwords are different | If password hashing salt changed between environments, logins may fail — test with a known password |
-| Worker boots but can't reach Proxmox | Leader lock is DB-only — Proxmox connectivity is a separate check |
-| Partial restore (some tables empty) | Row count of 0 matches if original was also 0 — verify tables that should have data actually do |
+| Row counts match but data is corrupted | Counts are identical but specific rows have NULL where they shouldn't, sample data diff catches some of this but not all |
+| Restore warnings about "already exists" | pg_restore may emit warnings if sequences or extensions conflict, check if they're fatal |
+| Auth works but passwords are different | If password hashing salt changed between environments, logins may fail, test with a known password |
+| Worker boots but can't reach Proxmox | Leader lock is DB-only, Proxmox connectivity is a separate check |
+| Partial restore (some tables empty) | Row count of 0 matches if original was also 0, verify tables that should have data actually do |
 
 ---
 

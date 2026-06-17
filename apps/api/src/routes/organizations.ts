@@ -73,7 +73,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   fastify.addHook('preHandler', fastify.authenticate as any);
 
   // -------------------------------------------------------------------------
-  // POST /organizations — Create a new organization
+  // POST /organizations, Create a new organization
   // -------------------------------------------------------------------------
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -117,7 +117,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // GET /organizations — List organizations the user belongs to
+  // GET /organizations, List organizations the user belongs to
   // -------------------------------------------------------------------------
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
@@ -139,7 +139,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // GET /organizations/:id — Get org details + members
+  // GET /organizations/:id, Get org details + members
   // -------------------------------------------------------------------------
   fastify.get('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -186,7 +186,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // PUT /organizations/:id — Update org settings (OWNER/ADMIN)
+  // PUT /organizations/:id, Update org settings (OWNER/ADMIN)
   // -------------------------------------------------------------------------
   fastify.put('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -227,7 +227,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // POST /organizations/:id/invite — Invite a member by email (OWNER/ADMIN)
+  // POST /organizations/:id/invite, Invite a member by email (OWNER/ADMIN)
   // -------------------------------------------------------------------------
   fastify.post('/:id/invite', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -326,7 +326,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
       });
     });
 
-    // SECURITY: Token sent via email outbox only — never log raw tokens.
+    // SECURITY: Token sent via email outbox only, never log raw tokens.
     // SECURITY: Do not log email addresses (PII)
     console.log(`[Org] Invitation created for org ${org.slug}`);
 
@@ -337,7 +337,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // POST /organizations/accept-invite — Accept invitation by token
+  // POST /organizations/accept-invite, Accept invitation by token
   // -------------------------------------------------------------------------
   fastify.post('/accept-invite', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -423,7 +423,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // POST /organizations/:id/members/:userId/role — Change member role (OWNER only)
+  // POST /organizations/:id/members/:userId/role, Change member role (OWNER only)
   // -------------------------------------------------------------------------
   fastify.post('/:id/members/:userId/role', async (request: any, reply) => {
     const actorId = request.user.userId;
@@ -488,7 +488,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // DELETE /organizations/:id/members/:userId — Remove member (OWNER/ADMIN)
+  // DELETE /organizations/:id/members/:userId, Remove member (OWNER/ADMIN)
   // -------------------------------------------------------------------------
   fastify.delete('/:id/members/:userId', async (request: any, reply) => {
     const actorId = request.user.userId;
@@ -543,7 +543,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
       });
     }
 
-    // ADMINs cannot remove other ADMINs — only OWNER can
+    // ADMINs cannot remove other ADMINs, only OWNER can
     if (targetMembership.role === 'ADMIN' && actorMembership.role !== 'OWNER') {
       return reply.status(403).send({
         errorCode: 'INSUFFICIENT_ROLE',
@@ -578,7 +578,7 @@ export const organizationRoutes: FastifyPluginAsync = async (fastify: FastifyIns
   });
 
   // -------------------------------------------------------------------------
-  // GET /organizations/:id/billing — Get org billing summary
+  // GET /organizations/:id/billing, Get org billing summary
   // -------------------------------------------------------------------------
   fastify.get('/:id/billing', async (request: any, reply) => {
     const userId = request.user.userId;

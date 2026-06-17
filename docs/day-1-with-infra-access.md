@@ -11,7 +11,7 @@
 | # | Task | Command / Action | Done? |
 |---|---|---|---|
 | 1.1 | Create `.env.staging` files for API, Worker, Gateway | Copy from `docs/staging-env-templates.md`, fill real values | [ ] |
-| 1.2 | Run environment validator | `scripts/validate-env.sh` — must exit 0 | [ ] |
+| 1.2 | Run environment validator | `scripts/validate-env.sh`, must exit 0 | [ ] |
 | 1.3 | Verify Proxmox API reachable | `curl -k -H "Authorization: ..." https://HOST:8006/api2/json/version` | [ ] |
 | 1.4 | Verify Stripe test key works | `curl https://api.stripe.com/v1/customers -u sk_test_KEY:` | [ ] |
 | 1.5 | Verify Postgres reachable | `psql $DATABASE_URL -c "SELECT 1"` | [ ] |
@@ -30,8 +30,8 @@
 | 2.4 | Seed fleet_gpus | SQL from `docs/infra-intake-packet.md` with real PCI addresses | [ ] |
 | 2.5 | Seed vm_templates | SQL from `docs/infra-intake-packet.md` with real template VMID | [ ] |
 | 2.6 | Verify gpu_skus exist | `psql -c "SELECT key, \"pricePerHourCents\" FROM gpu_skus"` | [ ] |
-| 2.7 | Seed warm_pool_config | `psql -c "SELECT * FROM warm_pool_config"` — verify entries | [ ] |
-| 2.8 | Run clean-state check | `psql -f scripts/db-queries/clean-state-check.sql` — all zeros | [ ] |
+| 2.7 | Seed warm_pool_config | `psql -c "SELECT * FROM warm_pool_config"`, verify entries | [ ] |
+| 2.8 | Run clean-state check | `psql -f scripts/db-queries/clean-state-check.sql`, all zeros | [ ] |
 
 **Gate**: All seed data present. `clean-state-check.sql` returns all zeros.
 
@@ -41,16 +41,16 @@
 
 | # | Task | Command / Action | Done? |
 |---|---|---|---|
-| 3.1 | Start API | `npm run dev:api` or production build — verify `/health` returns 200 | [ ] |
-| 3.2 | Start Gateway | `npm run dev:gateway` — verify `/health` returns 200 | [ ] |
-| 3.3 | Start Worker | `npm run dev:worker` — verify advisory lock acquired in logs | [ ] |
-| 3.4 | Run preflight | `scripts/preflight-live-proof.sh` — must exit 0 | [ ] |
+| 3.1 | Start API | `npm run dev:api` or production build, verify `/health` returns 200 | [ ] |
+| 3.2 | Start Gateway | `npm run dev:gateway`, verify `/health` returns 200 | [ ] |
+| 3.3 | Start Worker | `npm run dev:worker`, verify advisory lock acquired in logs | [ ] |
+| 3.4 | Run preflight | `scripts/preflight-live-proof.sh`, must exit 0 | [ ] |
 
 **Gate**: Preflight passes with 0 failures. All 3 services healthy.
 
 ---
 
-## Block 4: Proof 01 — Staging Readiness (1:30–2:00)
+## Block 4: Proof 01, Staging Readiness (1:30–2:00)
 
 | # | Task | Done? |
 |---|---|---|
@@ -63,7 +63,7 @@
 
 ---
 
-## Block 5: Proof 02 — Billing Parity (2:00–3:00)
+## Block 5: Proof 02, Billing Parity (2:00–3:00)
 
 | # | Task | Done? |
 |---|---|---|
@@ -72,14 +72,14 @@
 | 5.3 | Terminate the workspace | [ ] |
 | 5.4 | Verify: exactly 1 ENDED session, 1 outbox entry, billedCents > 0 | [ ] |
 | 5.5 | Verify: Stripe meter event accepted (check Stripe dashboard or API) | [ ] |
-| 5.6 | Run `scripts/db-queries/proof-02-billing.sql` — all checks pass | [ ] |
+| 5.6 | Run `scripts/db-queries/proof-02-billing.sql`, all checks pass | [ ] |
 | 5.7 | Run `scripts/run-proof.sh 02` for formal capture | [ ] |
 
 **Gate**: Proof 02 PASS. Stripe meter event visible in dashboard.
 
 ---
 
-## Block 6: Proofs 03, 04, 07 — Failure + Contention (3:00–5:00)
+## Block 6: Proofs 03, 04, 07, Failure + Contention (3:00–5:00)
 
 | # | Task | Done? |
 |---|---|---|
@@ -93,7 +93,7 @@
 
 ---
 
-## Block 7: Proofs 06, 05 — Leakage + Restore (5:00–6:00)
+## Block 7: Proofs 06, 05, Leakage + Restore (5:00–6:00)
 
 | # | Task | Done? |
 |---|---|---|
@@ -109,9 +109,9 @@
 
 | # | Task | Done? |
 |---|---|---|
-| 8.1 | Review `exports/proofs/<date>/proof-results.txt` — all 7 should have verdicts | [ ] |
+| 8.1 | Review `exports/proofs/<date>/proof-results.txt`, all 7 should have verdicts | [ ] |
 | 8.2 | Run proof-pack integrity checklist (`docs/proofs/proof-pack-integrity-checklist.md`) | [ ] |
-| 8.3 | `scripts/package-proof-evidence.sh` — creates archive | [ ] |
+| 8.3 | `scripts/package-proof-evidence.sh`, creates archive | [ ] |
 | 8.4 | Final billing state inspection → all zeros | [ ] |
 | 8.5 | Update `docs/launch-readiness-index.md` with L2 results | [ ] |
 | 8.6 | Update `docs/go-no-go-evidence-table.md` with proof verdicts | [ ] |
@@ -121,9 +121,9 @@
 
 ## Decision Point
 
-| All 7 proofs PASS | → **GO** — update launch-readiness-index, archive evidence |
+| All 7 proofs PASS | → **GO**, update launch-readiness-index, archive evidence |
 |---|---|
-| Any proof FAIL | → **NO-GO** — document failure, remediate, schedule re-run |
+| Any proof FAIL | → **NO-GO**, document failure, remediate, schedule re-run |
 | Infra partially available | → Run what we can, document blocked proofs as SKIP |
 
 ---

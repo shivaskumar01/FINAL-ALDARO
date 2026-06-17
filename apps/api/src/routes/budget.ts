@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 export const budgetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   fastify.addHook('preHandler', fastify.authenticate as any);
 
-  // GET /budget — get current budget config + MTD spend
+  // GET /budget, get current budget config + MTD spend
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
 
@@ -64,7 +64,7 @@ export const budgetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     };
   });
 
-  // PUT /budget — update budget settings
+  // PUT /budget, update budget settings
   fastify.put('/', async (request: any) => {
     const userId = request.user.userId;
     const body = z.object({

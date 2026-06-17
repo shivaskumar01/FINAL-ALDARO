@@ -205,7 +205,7 @@ async function processCleanupJob(prisma: PrismaClient, job: WorkspaceCleanupJob)
     }
 
     if (ws.gpuAllocation) {
-      // C3: Guard against missing GPU record — the GPU may have been removed from fleet
+      // C3: Guard against missing GPU record, the GPU may have been removed from fleet
       const gpu = await prisma.fleetGpu.findUnique({
         where: { id: ws.gpuAllocation.gpuId },
       });
@@ -221,7 +221,7 @@ async function processCleanupJob(prisma: PrismaClient, job: WorkspaceCleanupJob)
         console.warn(JSON.stringify({
           level: 'warn', service: 'worker', event: 'gpu_record_missing',
           gpuId: ws.gpuAllocation.gpuId, workspaceId: ws.id,
-          message: 'GPU record not found during cleanup — allocation will be released without GPU status update',
+          message: 'GPU record not found during cleanup, allocation will be released without GPU status update',
           timestamp: new Date().toISOString(),
         }));
       }

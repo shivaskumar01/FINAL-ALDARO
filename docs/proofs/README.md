@@ -10,7 +10,7 @@ Run strictly in this order. Each proof depends on the previous passing.
 
 | Order | Proof | What It Proves | Blocking? |
 |---|---|---|---|
-| 1 | [01-staging-readiness.md](01-staging-readiness.md) | Environment is operational | **Gate** — all others blocked |
+| 1 | [01-staging-readiness.md](01-staging-readiness.md) | Environment is operational | **Gate**, all others blocked |
 | 2 | [02-billing-parity.md](02-billing-parity.md) | Billing pipeline is exact | P0 |
 | 3 | [03-terminate-outage-recovery.md](03-terminate-outage-recovery.md) | Cleanup recovers from gateway failure | P0 |
 | 4 | [04-last-gpu-contention.md](04-last-gpu-contention.md) | Concurrent launch is safe | P0 |
@@ -23,7 +23,7 @@ Run strictly in this order. Each proof depends on the previous passing.
 - Proof 02 (billing) must be proven before proofs that create billable state.
 - Proof 03 (terminate recovery) uses a running workspace from proof 02 flow.
 - Proof 04 (GPU contention) needs billing proven first so leaked sessions are detectable.
-- Proof 07 (cleanup durability) injects stale state — run before stack leakage to avoid interference.
+- Proof 07 (cleanup durability) injects stale state, run before stack leakage to avoid interference.
 - Proof 06 (stack leakage) is independent but benefits from a warm system.
 - Proof 05 (restore drill) runs last because it stops and restarts services.
 
@@ -93,7 +93,7 @@ All 7 proofs target L2. Current status: L1 locally verified for billing, gateway
 2. Verify ALL preconditions are met
 3. Create the evidence directory: `mkdir -p exports/proofs/$(date +%Y-%m-%d)/<proof-name>/`
 4. Run commands in order, capturing output to evidence files
-5. Evaluate pass/fail rules — check the false-pass warnings
+5. Evaluate pass/fail rules, check the false-pass warnings
 6. If any check fails: stop, investigate, fix, re-run from the top
 7. Run rollback/cleanup section before proceeding to next proof
 

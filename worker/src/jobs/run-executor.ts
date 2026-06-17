@@ -137,7 +137,7 @@ async function provisionRunWorkspace(prisma: PrismaClient, run: any) {
     return;
   }
 
-  // 2. No warm workspace available — create a cold workspace record.
+  // 2. No warm workspace available, create a cold workspace record.
   //    The warm-pool tick (processCreatingWorkspaces) will pick this up and
   //    provision the actual VM on Proxmox.
   const { v4: uuidv4 } = await import('uuid');
@@ -222,7 +222,7 @@ async function processProvisioningRuns(prisma: PrismaClient) {
         continue;
       }
 
-      // Otherwise workspace is still booting (CREATING, WAITING_FOR_AGENT, etc.) — keep waiting
+      // Otherwise workspace is still booting (CREATING, WAITING_FOR_AGENT, etc.), keep waiting
     } catch (err: any) {
       console.error(`[RunExecutor] Error checking provisioning for run ${run.id}:`, err.message);
     }
@@ -293,7 +293,7 @@ export async function initializeRun(prisma: PrismaClient, run: any, workspace: a
   // SECURITY: Validate VM IP is in the expected workspace subnet
   const vmSubnet = process.env.VM_SUBNET || '10.10.';
   if (!workspace.vmInternalIp.startsWith(vmSubnet)) {
-    throw new Error(`VM IP ${workspace.vmInternalIp} is not in allowed subnet — possible SSRF`);
+    throw new Error(`VM IP ${workspace.vmInternalIp} is not in allowed subnet, possible SSRF`);
   }
 
   const agentUrl = `http://${workspace.vmInternalIp}:${AGENT_PORT}/execute`;
@@ -415,7 +415,7 @@ export async function checkRunHeartbeat(prisma: PrismaClient, run: any): Promise
   });
 
   // If no session exists yet, the agent might still be starting up.
-  // Give it some grace — only fail if the run has been 'running' for > 5 min without a session.
+  // Give it some grace, only fail if the run has been 'running' for > 5 min without a session.
   if (!session) {
     if (!run.startedAt) return false;
     const sinceStart = Date.now() - new Date(run.startedAt).getTime();
@@ -464,7 +464,7 @@ async function processUploadingArtifactsRuns(prisma: PrismaClient) {
       if (latestStatusEvent) {
         const payload = safeJsonParse(latestStatusEvent.payload, {});
         if (payload.state === 'completed' || payload.state === 'failed') {
-          // Agent reported terminal state — finalize
+          // Agent reported terminal state, finalize
           await finalizeRun(prisma, run);
           continue;
         }
@@ -663,7 +663,7 @@ async function releaseRunWorkspace(prisma: PrismaClient, workspaceId: string) {
       });
       console.log(`[RunExecutor] Returned workspace ${workspaceId} to warm pool`);
     } else {
-      // Cold workspace — enqueue for termination
+      // Cold workspace, enqueue for termination
       await enqueueWorkspaceCleanup(prisma, workspaceId, 'run_completed');
     }
   } catch (err: any) {

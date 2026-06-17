@@ -94,7 +94,7 @@ psql "$DATABASE_URL" -c "SELECT status, \"attemptCount\", \"lastErrorCode\", \"l
 # Verify: attemptCount > 0, status still PENDING or RETRY, lastErrorCode is not empty
 
 # 13. Capture worker logs during outage
-# (depends on how worker logs — adjust path)
+# (depends on how worker logs, adjust path)
 grep -A5 "cleanup.*$WORKSPACE_ID\|$WORKSPACE_ID.*cleanup\|$WORKSPACE_ID.*error\|$WORKSPACE_ID.*retry" /tmp/worker.log | tail -50 > "$DIR/worker-logs-during-outage.txt"
 
 # === RECOVERY: Restart gateway ===
@@ -167,10 +167,10 @@ psql "$DATABASE_URL" -c "SELECT o.id, o.status, o.\"valueSeconds\", o.\"stripeMe
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| Cleanup completes before gateway restart | API-side `endUsageSession` closed the session + released gateway ports via a different code path — you're not testing the cleanup-job recovery path |
-| Session was already ENDED before terminate | Worker's idle-termination or another path closed it — verify session was RUNNING at step 2 |
-| `attemptCount` = 0 at step 12 | Cleanup tick interval may be longer than your wait — increase wait time or check worker tick frequency |
-| Gateway wasn't actually down | Port 5001 was held open by another process — verify with curl that health fails at step 6 |
+| Cleanup completes before gateway restart | API-side `endUsageSession` closed the session + released gateway ports via a different code path, you're not testing the cleanup-job recovery path |
+| Session was already ENDED before terminate | Worker's idle-termination or another path closed it, verify session was RUNNING at step 2 |
+| `attemptCount` = 0 at step 12 | Cleanup tick interval may be longer than your wait, increase wait time or check worker tick frequency |
+| Gateway wasn't actually down | Port 5001 was held open by another process, verify with curl that health fails at step 6 |
 
 ---
 

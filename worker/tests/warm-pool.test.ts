@@ -1,5 +1,5 @@
 /**
- * Warm Pool Worker Logic — Integration Tests (Mocked Dependencies)
+ * Warm Pool Worker Logic, Integration Tests (Mocked Dependencies)
  *
  * Tests all warm pool invariants using mocked Prisma and Proxmox:
  *

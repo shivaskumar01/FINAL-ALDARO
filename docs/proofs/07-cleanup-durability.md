@@ -201,12 +201,12 @@ FROM usage_sessions WHERE \"workspaceId\" = 'cleanup-proof-billing-001';
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| Workspace FAILED instead of TERMINATED | FAILED is terminal so counts as "resolved" — but if the failure is a bug, investigate before counting it as pass |
-| Session ENDED but billedCents=0 | Math works with $0 pricing — verify `pricePerHourCents` was 150 as injected |
-| Outbox exists but status=FAILED | Outbox created but Stripe emission failed — acceptable for local/staging-without-Stripe but note it |
-| GPU freed but by manual seed reset | If worker restart or schema migration freed the GPU, not the sweeper — check worker logs for explicit sweep action |
-| Worker didn't actually process | Worker might have been down during test — verify worker logs show tick activity during the wait period |
-| Endpoint released by gateway restart reconciliation | Gateway restart triggers `reconcileLeases()` which cleans stale endpoints — this is a valid cleanup path but different from worker periodic sweep |
+| Workspace FAILED instead of TERMINATED | FAILED is terminal so counts as "resolved", but if the failure is a bug, investigate before counting it as pass |
+| Session ENDED but billedCents=0 | Math works with $0 pricing, verify `pricePerHourCents` was 150 as injected |
+| Outbox exists but status=FAILED | Outbox created but Stripe emission failed, acceptable for local/staging-without-Stripe but note it |
+| GPU freed but by manual seed reset | If worker restart or schema migration freed the GPU, not the sweeper, check worker logs for explicit sweep action |
+| Worker didn't actually process | Worker might have been down during test, verify worker logs show tick activity during the wait period |
+| Endpoint released by gateway restart reconciliation | Gateway restart triggers `reconcileLeases()` which cleans stale endpoints, this is a valid cleanup path but different from worker periodic sweep |
 
 ---
 
@@ -216,7 +216,7 @@ From `docs/cleanup-durability-matrix.md`:
 
 | Gap | How this proof exercises it |
 |---|---|
-| G1: Missing session on RUNNING_ASSIGNED | Not directly — would need a different injection |
+| G1: Missing session on RUNNING_ASSIGNED | Not directly, would need a different injection |
 | G2: Historical ENDED without outbox | Scenario 3 tests forward path; G2 is historical backfill |
 | G3: No periodic endpoint sweep | Scenario 4 tests endpoint cleanup via gateway reconcile or worker |
 | G5: GPU release not guarded against missing GPU | Scenario 5 tests stuck GPU release |

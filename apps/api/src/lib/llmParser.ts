@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * and extracts structured training parameters. Falls back to null
  * on any failure so the caller can use the regex parser instead.
  *
- * The scoring math remains 100% deterministic — only parameter
+ * The scoring math remains 100% deterministic, only parameter
  * extraction uses the LLM.
  */
 

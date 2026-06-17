@@ -18,7 +18,7 @@ async function isBlockedResolvedIp(hostname: string): Promise<boolean> {
     const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
     const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
     const all = [...addresses, ...addresses6];
-    // A15 FIX: fail closed — if the host doesn't resolve, block rather than allow,
+    // A15 FIX: fail closed, if the host doesn't resolve, block rather than allow,
     // so an attacker can't bypass the SSRF guard by defeating resolve4/resolve6.
     if (all.length === 0) return true;
     for (const ip of all) {
@@ -185,7 +185,7 @@ async function deliverToEndpoint(
       return;
     }
   } catch {
-    // URL parse failure — will be caught by fetch below
+    // URL parse failure, will be caught by fetch below
   }
 
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
@@ -220,7 +220,7 @@ async function deliverToEndpoint(
         return;
       }
 
-      // Non-2xx response — treat as failure and retry
+      // Non-2xx response, treat as failure and retry
       lastError = new Error(`HTTP ${result.status}`);
     } catch (err: any) {
       lastError = err;
@@ -234,7 +234,7 @@ async function deliverToEndpoint(
     }
   }
 
-  // All attempts exhausted — mark as failed
+  // All attempts exhausted, mark as failed
   const newFailureCount = endpoint.failureCount + 1;
 
   await prisma.$transaction([

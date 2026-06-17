@@ -79,7 +79,7 @@ DATABASE_URL=postgresql://aldaro:PASSWORD@db-host:5432/aldaro_staging
 # Agent auth (must match API)
 ALDARO_AGENT_SHARED_SECRET=REPLACE_WITH_64_HEX_CHAR_RANDOM
 
-# Proxmox (required — worker does all provisioning)
+# Proxmox (required, worker does all provisioning)
 PROXMOX_API_URL=https://proxmox-host:8006
 PROXMOX_API_TOKEN_ID=aldaro@pve!staging
 PROXMOX_API_TOKEN_SECRET=REPLACE_WITH_PROXMOX_TOKEN
@@ -124,7 +124,7 @@ GATEWAY_SERVICE_SECRET=REPLACE_WITH_64_HEX_CHAR_RANDOM
 ```bash
 NEXT_PUBLIC_API_BASE_URL=https://api-staging.aldaro.ai
 
-# JWT secret (must match API — used for server-side session verification)
+# JWT secret (must match API, used for server-side session verification)
 JWT_ACCESS_SECRET=REPLACE_WITH_64_CHAR_RANDOM
 ```
 

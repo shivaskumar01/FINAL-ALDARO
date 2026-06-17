@@ -12,7 +12,7 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 
 ## Job-by-Job Analysis
 
-### 1. warm-pool.ts — Warm Pool Provisioning
+### 1. warm-pool.ts, Warm Pool Provisioning
 
 **Purpose**: Maintains pool of pre-provisioned warm workspaces; also handles cold launch provisioning.
 
@@ -41,11 +41,11 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 | Agent timeout (5 min) | Workspace marked FAILED, cleanup queued |
 | Provision cleanup fails | Console error only; VM may persist in Proxmox |
 
-**Risk level**: **HIGH** — Orphan VMs can accumulate; GPU allocation race conditions possible; no cleanup retry for failed provision cleanups.
+**Risk level**: **HIGH**, Orphan VMs can accumulate; GPU allocation race conditions possible; no cleanup retry for failed provision cleanups.
 
 ---
 
-### 2. workspace-cleanup.ts — Terminal Cleanup Queue
+### 2. workspace-cleanup.ts, Terminal Cleanup Queue
 
 **Purpose**: VM deletion, GPU release, billing finalization, gateway port release with retry logic.
 
@@ -71,11 +71,11 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 | Proxmox VM delete fails | Job retries; on dead-letter, VM persists |
 | Usage session finalization fails | Session stays RUNNING; meter event never enqueued |
 
-**Risk level**: **MEDIUM** — Exponential backoff provides resilience; dead-letter incidents created but may not trigger external alerting.
+**Risk level**: **MEDIUM**, Exponential backoff provides resilience; dead-letter incidents created but may not trigger external alerting.
 
 ---
 
-### 3. idle-termination.ts — Idle/Dead-Agent Detection
+### 3. idle-termination.ts, Idle/Dead-Agent Detection
 
 **Purpose**: Scans RUNNING_ASSIGNED workspaces for termination triggers.
 
@@ -87,13 +87,13 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 
 **External dependencies**: Database only (reads heartbeat/utilization, writes cleanup jobs)
 
-**Failure consequences**: Worst case — idle workspace persists longer than timeout (resource waste, not leak).
+**Failure consequences**: Worst case, idle workspace persists longer than timeout (resource waste, not leak).
 
 **Risk level**: **LOW**
 
 ---
 
-### 4. workspace-metering.ts — Stripe Billing Emission
+### 4. workspace-metering.ts, Stripe Billing Emission
 
 **Purpose**: Emits billing meter events to Stripe for usage-based billing.
 
@@ -115,11 +115,11 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 | Missing Stripe customer ID | Event FAILED immediately |
 | DB commit fails after Stripe succeeds | Duplicate emission possible (no idempotency token) |
 
-**Risk level**: **MEDIUM** — No idempotency guard on Stripe calls; dead-letter events may not trigger alerting.
+**Risk level**: **MEDIUM**, No idempotency guard on Stripe calls; dead-letter events may not trigger alerting.
 
 ---
 
-### 5. email-outbox.ts — Transactional Emails
+### 5. email-outbox.ts, Transactional Emails
 
 **Purpose**: Sends application review emails via SMTP/SES.
 
@@ -129,7 +129,7 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 
 **Error handling**: Try/catch around sendEmail(); max 5 attempts; no backoff.
 
-**External dependencies**: Email provider (SMTP/SES — **NOT IMPLEMENTED**, dev stub only), Database (Prisma)
+**External dependencies**: Email provider (SMTP/SES, **NOT IMPLEMENTED**, dev stub only), Database (Prisma)
 
 **Failure consequences**:
 | Failure | Consequence |
@@ -138,11 +138,11 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 | Crash between SENDING update and send | Email stuck in SENDING state (orphan) |
 | Provider credentials missing | All emails fail immediately |
 
-**Risk level**: **MEDIUM** — Email provider not implemented (production blocker); no backoff logic; SENDING state orphan possible.
+**Risk level**: **MEDIUM**, Email provider not implemented (production blocker); no backoff logic; SENDING state orphan possible.
 
 ---
 
-### 6. event-retention.ts — Event Archival
+### 6. event-retention.ts, Event Archival
 
 **Purpose**: Archives old events into daily rollups and deletes events >30 days old.
 
@@ -154,7 +154,7 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 
 ---
 
-### 7. fleet-daily-agg.ts — Fleet Metrics Aggregation
+### 7. fleet-daily-agg.ts, Fleet Metrics Aggregation
 
 **Purpose**: Computes daily fleet utilization/revenue metrics for dashboards.
 
@@ -177,7 +177,7 @@ The worker manages Aldaro's GPU workspace lifecycle across 7 distinct jobs. It u
 | Stripe double-billing (no idempotency) | Medium | metering |
 | Email provider not implemented | Medium | email-outbox |
 | Usage session stays RUNNING after terminate | Medium | workspace-cleanup |
-| Leader lock — single writer SPOF | Low | All jobs |
+| Leader lock, single writer SPOF | Low | All jobs |
 | Stale state detection race conditions | Low | warm-pool, workspace-cleanup |
 
 ---

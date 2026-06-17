@@ -57,7 +57,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     return user;
   });
 
-  // POST /users/change-password — change password (requires reauth)
+  // POST /users/change-password, change password (requires reauth)
   fastify.post('/change-password', {
     preHandler: fastify.requireReauth as any,
     config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },

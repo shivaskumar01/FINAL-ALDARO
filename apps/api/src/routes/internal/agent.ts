@@ -21,7 +21,7 @@ const TERMINAL_WORKSPACE_STATES = new Set(['TERMINATED', 'TERMINATING', 'FAILED'
 const prisma = new PrismaClient();
 
 // A14: nonce replay cache moved to the shared ephemeral store (Redis when REDIS_URL is
-// set, else in-memory). A per-instance Map was replay-bypassable across API replicas — an
+// set, else in-memory). A per-instance Map was replay-bypassable across API replicas, an
 // attacker could replay a captured agent callback against a different replica.
 // Nonce TTL matches MAX_TIMESTAMP_DRIFT_MS: payloads older than 60s are already rejected
 // by the timestamp check, so nonces only need to live that long.

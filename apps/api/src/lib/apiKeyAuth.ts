@@ -107,7 +107,7 @@ function parseScopes(scopeStr: string): Set<string> {
  */
 function hasScope(request: FastifyRequest, scope: string): boolean {
   const apiKeyUser = (request as any).apiKeyUser;
-  // JWT session auth — no scope restriction
+  // JWT session auth, no scope restriction
   if (!apiKeyUser) return true;
   const scopes: Set<string> = apiKeyUser.scopes;
   return scopes.has('*') || scopes.has(scope);

@@ -183,11 +183,11 @@ cat "$DIR/wallclock.txt"
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| `pricePerHourCents = 0` | All math works (0 × anything = 0) but customer is never billed — verify GPU SKU pricing pre-test |
-| `totalSeconds` = 0 | Session started and ended in same second — terminate happened before usage accumulated |
-| Outbox status = SENT but `stripeMeterEventId` is fake | Stripe test mode accepts anything — verify event exists in Stripe Dashboard |
-| Only 1 session tested | This proves the happy path once — does NOT prove concurrent races, which need stress tests |
-| Worker tick happened to run before terminate | Session was already closed by worker, not by terminate path — both paths are valid but you're testing a different code path than you think |
+| `pricePerHourCents = 0` | All math works (0 × anything = 0) but customer is never billed, verify GPU SKU pricing pre-test |
+| `totalSeconds` = 0 | Session started and ended in same second, terminate happened before usage accumulated |
+| Outbox status = SENT but `stripeMeterEventId` is fake | Stripe test mode accepts anything, verify event exists in Stripe Dashboard |
+| Only 1 session tested | This proves the happy path once, does NOT prove concurrent races, which need stress tests |
+| Worker tick happened to run before terminate | Session was already closed by worker, not by terminate path, both paths are valid but you're testing a different code path than you think |
 
 ---
 

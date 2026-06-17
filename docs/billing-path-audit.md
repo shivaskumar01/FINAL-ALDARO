@@ -140,9 +140,9 @@ Attempts 7-20 repeat at 15-minute intervals. Total time to exhaustion: ~3.5 hour
 
 ### Transaction Boundary
 
-**Success path**: YES — outbox update + session update in `$transaction`.
+**Success path**: YES, outbox update + session update in `$transaction`.
 
-**Pre-attempt status**: REMEDIATED — `attemptCount` is now incremented inside the success or failure handler, not before the Stripe call. A crash between read and Stripe call no longer wastes an attempt.
+**Pre-attempt status**: REMEDIATED, `attemptCount` is now incremented inside the success or failure handler, not before the Stripe call. A crash between read and Stripe call no longer wastes an attempt.
 
 ---
 
@@ -186,14 +186,14 @@ Worker auto-detects metering failures:
 
 | # | Gap | Severity | Impact | Remediation Status |
 |---|---|---|---|---|
-| 1 | UsageSession create not in txn with workspace status | High | Orphaned workspace with no billing | Open — `startUsageSession` now has duplicate-session guard and GpuSku-missing warning, but not yet wrapped in launch txn |
-| 2 | Session close and meter enqueue not atomic | High | Session ENDED but billing never emitted | **REMEDIATED** — both API `endUsageSession` and worker `finalizeUsageSessions` now use `$transaction([sessionUpdate, outboxUpsert])` |
-| 3 | Pre-update to RETRY before Stripe call | High | Duplicate attempts on crash | **REMEDIATED** — `attemptCount` now incremented inside success/failure handlers, not before Stripe call |
-| 4 | Stripe success + txn commit failure | High | Duplicate Stripe emission on retry | Mitigated — Stripe `identifier` field provides deduplication. Outbox upsert by `usageSessionId` prevents DB duplicates. Full proof requires Stripe integration test. |
-| 5 | Missing GpuSku → $0 billing silently | Medium | Revenue loss undetected | **REMEDIATED** — `startUsageSession` now logs error when GpuSku not found |
-| 6 | Stripe customer creation not atomic with DB save | Medium | Duplicate Stripe customers | Open — requires Stripe integration to fix |
-| 7 | Meter event name hardcoded | Medium | Brittle to Stripe config changes | Open — low priority |
-| 8 | Missing STRIPE_SECRET_KEY → silent skip | Low | Entire metering silently disabled | Open — incident detection covers this partially |
+| 1 | UsageSession create not in txn with workspace status | High | Orphaned workspace with no billing | Open, `startUsageSession` now has duplicate-session guard and GpuSku-missing warning, but not yet wrapped in launch txn |
+| 2 | Session close and meter enqueue not atomic | High | Session ENDED but billing never emitted | **REMEDIATED**, both API `endUsageSession` and worker `finalizeUsageSessions` now use `$transaction([sessionUpdate, outboxUpsert])` |
+| 3 | Pre-update to RETRY before Stripe call | High | Duplicate attempts on crash | **REMEDIATED**, `attemptCount` now incremented inside success/failure handlers, not before Stripe call |
+| 4 | Stripe success + txn commit failure | High | Duplicate Stripe emission on retry | Mitigated, Stripe `identifier` field provides deduplication. Outbox upsert by `usageSessionId` prevents DB duplicates. Full proof requires Stripe integration test. |
+| 5 | Missing GpuSku → $0 billing silently | Medium | Revenue loss undetected | **REMEDIATED**, `startUsageSession` now logs error when GpuSku not found |
+| 6 | Stripe customer creation not atomic with DB save | Medium | Duplicate Stripe customers | Open, requires Stripe integration to fix |
+| 7 | Meter event name hardcoded | Medium | Brittle to Stripe config changes | Open, low priority |
+| 8 | Missing STRIPE_SECRET_KEY → silent skip | Low | Entire metering silently disabled | Open, incident detection covers this partially |
 
 ---
 
@@ -215,9 +215,9 @@ Worker auto-detects metering failures:
 
 ### DB guarantees
 
-- `WorkspaceMeterEventOutbox.usageSessionId` has `@unique` constraint — enforces 1:1 session-to-outbox
-- Outbox upsert uses this unique key — safe for duplicate calls (update, not create)
-- Session update uses `WHERE status = 'RUNNING'` — second close attempt gets P2025
+- `WorkspaceMeterEventOutbox.usageSessionId` has `@unique` constraint, enforces 1:1 session-to-outbox
+- Outbox upsert uses this unique key, safe for duplicate calls (update, not create)
+- Session update uses `WHERE status = 'RUNNING'`, second close attempt gets P2025
 
 ### Tests (24/24 pass on local Postgres 15.17, 2026-03-13)
 
@@ -247,11 +247,11 @@ See also: [billing-invariants.md](billing-invariants.md) for the formal invarian
 
 ---
 
-## What This Audit Proves (L1 — locally verified)
+## What This Audit Proves (L1, locally verified)
 
 - Session close + outbox enqueue are atomically tied in all three close paths (API, worker cleanup, warm-pool terminate)
-- Duplicate close calls are safe (no error, no duplicate billing) — including API-worker race
-- Concurrent close calls are safe (P2025 catch) — **bug found and fixed during verification**
+- Duplicate close calls are safe (no error, no duplicate billing), including API-worker race
+- Concurrent close calls are safe (P2025 catch), **bug found and fixed during verification**
 - `attemptCount` no longer incremented before actual Stripe call attempt
 - GpuSku-missing condition is now logged (previously silent)
 - DB unique constraint prevents duplicate outbox entries per session

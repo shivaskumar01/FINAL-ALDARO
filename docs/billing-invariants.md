@@ -9,14 +9,14 @@
 ### INV-1: At most one RUNNING session per workspace
 
 **Enforcement**: Two layers:
-1. **Application guard** in `startUsageSession()` — checks `findFirst({ status: 'RUNNING' })` before creating.
-2. **DB partial unique index** — `usage_sessions_one_running_per_workspace` on `("workspaceId") WHERE status = 'RUNNING'`.
+1. **Application guard** in `startUsageSession()`, checks `findFirst({ status: 'RUNNING' })` before creating.
+2. **DB partial unique index**, `usage_sessions_one_running_per_workspace` on `("workspaceId") WHERE status = 'RUNNING'`.
 
-**DB enforcement**: **Yes** — partial unique index applied via migration `20260313000000_enforce_one_running_session`. A second `INSERT` with `status = 'RUNNING'` for the same `workspaceId` will fail with Prisma P2002 (unique constraint violation). Historical ENDED sessions are not constrained.
+**DB enforcement**: **Yes**, partial unique index applied via migration `20260313000000_enforce_one_running_session`. A second `INSERT` with `status = 'RUNNING'` for the same `workspaceId` will fail with Prisma P2002 (unique constraint violation). Historical ENDED sessions are not constrained.
 
 **Risk**: Effectively zero. Even if the application guard is bypassed (e.g., concurrent race), the DB rejects the duplicate. The application code in `startUsageSession` should catch P2002 and return the existing session gracefully.
 
-**Tested**: Yes — 8 dedicated constraint tests:
+**Tested**: Yes, 8 dedicated constraint tests:
 - First RUNNING session succeeds
 - Second RUNNING session blocked by DB (P2002)
 - Multiple ENDED sessions allowed
@@ -33,7 +33,7 @@
 
 **DB enforcement**: The status field has no constraint preventing re-transitions, but the application logic ensures the update only matches RUNNING sessions.
 
-**Tested**: Yes — 5 tests cover this:
+**Tested**: Yes, 5 tests cover this:
 - `duplicate close request is safe`
 - `close after session already ended via finalizeUsageSessions`
 - `concurrent close attempts both succeed`
@@ -46,9 +46,9 @@
 
 **Enforcement**: `WorkspaceMeterEventOutbox.usageSessionId` has `@unique` constraint in schema. The `upsert` in the close transaction uses this as the `where` key.
 
-**DB enforcement**: Yes — unique constraint at DB level. Attempting to create a duplicate throws a Prisma constraint violation.
+**DB enforcement**: Yes, unique constraint at DB level. Attempting to create a duplicate throws a Prisma constraint violation.
 
-**Tested**: Yes — `DB unique constraint prevents duplicate outbox rows per session` explicitly tests this.
+**Tested**: Yes, `DB unique constraint prevents duplicate outbox rows per session` explicitly tests this.
 
 ---
 
@@ -58,7 +58,7 @@
 
 **Risk**: If `startUsageSession` is somehow called on a FAILED workspace, it will create a session. However, `finalizeUsageSessions` will clean it up.
 
-**Tested**: Yes — `failed workspace: startUsageSession guard allows creation but endUsageSession cleans up`
+**Tested**: Yes, `failed workspace: startUsageSession guard allows creation but endUsageSession cleans up`
 
 ---
 
@@ -66,7 +66,7 @@
 
 **Enforcement**: Both `endUsageSession()` (API) and `finalizeUsageSessions()` (worker cleanup job) close all RUNNING sessions for a workspace.
 
-**Tested**: Yes — `terminate path (finalizeUsageSessions) closes session exactly once` and `no RUNNING sessions on terminal workspaces after cleanup`
+**Tested**: Yes, `terminate path (finalizeUsageSessions) closes session exactly once` and `no RUNNING sessions on terminal workspaces after cleanup`
 
 ---
 
@@ -74,7 +74,7 @@
 
 **Enforcement**: Both writes are in a single `prisma.$transaction([...])` call. If either fails, neither commits.
 
-**Tested**: Yes — `normal close transitions to ENDED + creates outbox atomically` and `every ENDED session has exactly one outbox entry`
+**Tested**: Yes, `normal close transitions to ENDED + creates outbox atomically` and `every ENDED session has exactly one outbox entry`
 
 ---
 
@@ -82,7 +82,7 @@
 
 **Enforcement**: Both use the same `WHERE status: 'RUNNING'` + P2025 catch pattern. When racing, one wins the transaction and the other gets P2025 (silently ignored).
 
-**Tested**: Yes — `endUsageSession + finalizeUsageSessions interop: no double close`
+**Tested**: Yes, `endUsageSession + finalizeUsageSessions interop: no double close`
 
 **Bug found and fixed during testing**: `endUsageSession` was missing the P2025 catch. Added in this verification phase.
 

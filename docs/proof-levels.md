@@ -1,4 +1,4 @@
-# Proof Levels — Three-Tier Evidence Model
+# Proof Levels, Three-Tier Evidence Model
 
 This document defines the standard for distinguishing between code existence, local proof, and real-environment proof across the Aldaro platform.
 
@@ -35,7 +35,7 @@ The feature has been exercised in an environment with real infrastructure: real 
 |---|---|
 | "Fixed" | "Implementation exists (L0)" or "Locally verified (L1)" or "Staging-proven (L2)" |
 | "Works" | "Behaves as expected locally up to [boundary]" |
-| "Validated" | "Locally validated" or "Staging-validated" — always specify |
+| "Validated" | "Locally validated" or "Staging-validated", always specify |
 | "Proven" | Only use for L2 with evidence artifact reference |
 | "Tested" | Specify: "code-reviewed", "locally exercised", or "staging-tested" |
 | "Secure" | "Error surface locally audited" or "Staging-proven clean" |

@@ -173,8 +173,8 @@ npx tsx src/index.ts
 Verify in logs:
 ```
 Aldaro Worker Service Started
-✓ Proxmox connection validated
-✓ Acquired leader lock (fencing token: ...)
+Proxmox connection validated
+Acquired leader lock (fencing token: ...)
 ```
 
 ### 4.4 Web (optional for proof runs)
@@ -283,7 +283,7 @@ The following phases have been validated locally (macOS, PostgreSQL 15.17):
 - [x] **Phase 1**: Database created, schema pushed (37 tables), Prisma client generated
 - [x] **Phase 3**: Seed data loaded (2 nodes, 2 GPUs, 2 templates, 2 SKUs, 3 users)
 - [x] **Phase 4 (Worker only)**: Worker starts, acquires advisory lock, schedules ticks, reaches Proxmox boundary
-- [ ] **Phase 2**: Secrets — placeholder values used locally, real secrets needed for staging
+- [ ] **Phase 2**: Secrets, placeholder values used locally, real secrets needed for staging
 - [ ] **Phase 4 (Gateway)**: Not started against staging yet
 - [ ] **Phase 4 (API)**: Not started against Postgres yet (runs locally on SQLite)
 - [ ] **Phase 5**: Preflight cannot pass without real Proxmox, gateway, and API connectivity

@@ -1,4 +1,4 @@
-# Staging P0 Proof Report — 2026-03-11
+# Staging P0 Proof Report, 2026-03-11
 
 ## Decision
 **NO-GO remains in effect.**

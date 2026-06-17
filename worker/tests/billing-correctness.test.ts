@@ -1,5 +1,5 @@
 /**
- * Billing Correctness Tests — Comprehensive Regression Suite
+ * Billing Correctness Tests, Comprehensive Regression Suite
  *
  * Tests all invariants that protect billing integrity:
  *
@@ -287,7 +287,7 @@ describe('Session Lifecycle', () => {
     const sessionId = await createRunningSession(testUserId, testWorkspaceId);
 
     await endUsageSession(testWorkspaceId);
-    await endUsageSession(testWorkspaceId); // second call — should be no-op
+    await endUsageSession(testWorkspaceId); // second call, should be no-op
 
     const outboxCount = await prisma.workspaceMeterEventOutbox.count({
       where: { usageSessionId: sessionId },
@@ -302,7 +302,7 @@ describe('Session Lifecycle', () => {
     const sessionId = await createRunningSession(testUserId, testWorkspaceId);
 
     await finalizeUsageSessions(testWorkspaceId);
-    // Now try endUsageSession — should find no RUNNING session
+    // Now try endUsageSession, should find no RUNNING session
     await endUsageSession(testWorkspaceId);
 
     const outboxCount = await prisma.workspaceMeterEventOutbox.count({
@@ -454,7 +454,7 @@ describe('Atomicity', () => {
 
   test('P2025 only fires for already-closed sessions, not for missing session IDs', async () => {
     // If we call finalizeUsageSessions on a workspace with no sessions at all,
-    // the findMany returns empty — no P2025 is needed.
+    // the findMany returns empty, no P2025 is needed.
     await expect(finalizeUsageSessions(testWorkspaceId)).resolves.not.toThrow();
   });
 
@@ -464,7 +464,7 @@ describe('Atomicity', () => {
     // First outbox entry via normal path
     await finalizeUsageSessions(testWorkspaceId);
 
-    // Try to manually create a second outbox row — should fail at DB level
+    // Try to manually create a second outbox row, should fail at DB level
     await expect(
       prisma.workspaceMeterEventOutbox.create({
         data: {

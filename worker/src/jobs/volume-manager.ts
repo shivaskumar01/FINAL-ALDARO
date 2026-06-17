@@ -46,7 +46,7 @@ async function processCreatingVolumes(prisma: PrismaClient) {
       // Check node has enough free disk space
       if (node.diskFreeGb !== null && node.diskFreeGb < volume.sizeGb) {
         console.error(`[VolumeManager] Node ${node.name} lacks disk space for ${volume.sizeGb}GB volume`);
-        continue; // Try again on next tick — another node may free up
+        continue; // Try again on next tick, another node may free up
       }
 
       const storagePool = volume.proxmoxStoragePool || 'local-lvm';
@@ -58,7 +58,7 @@ async function processCreatingVolumes(prisma: PrismaClient) {
 
       await proxmox.updateVmConfig(node.name, 0, {
         // Use Proxmox storage content API to allocate disk
-        // This is a simplified approach — in production, use the storage API directly
+        // This is a simplified approach, in production, use the storage API directly
       });
 
       // Mark as available with the allocated disk info
@@ -102,7 +102,7 @@ async function processDeletingVolumes(prisma: PrismaClient) {
         console.log(`[VolumeManager] Deleting disk ${volume.proxmoxDiskId} from ${volume.proxmoxNode}`);
 
         // In production, call Proxmox storage delete API
-        // For now, mark as deleted — Proxmox disk deletion is node-specific
+        // For now, mark as deleted, Proxmox disk deletion is node-specific
         // and the exact API depends on storage type (LVM, ZFS, etc.)
       }
 

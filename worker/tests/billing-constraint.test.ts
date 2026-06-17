@@ -87,7 +87,7 @@ describe('Partial Unique Index: one RUNNING session per workspace', () => {
       },
     });
 
-    // Second session — should fail with unique constraint violation
+    // Second session, should fail with unique constraint violation
     await expect(
       prisma.usageSession.create({
         data: {
@@ -134,7 +134,7 @@ describe('Partial Unique Index: one RUNNING session per workspace', () => {
     }
   });
 
-  test('ENDED sessions are not constrained — multiple per workspace allowed', async () => {
+  test('ENDED sessions are not constrained, multiple per workspace allowed', async () => {
     const ws = await createWorkspace();
 
     // Create and close 3 sessions
@@ -222,7 +222,7 @@ describe('Partial Unique Index: one RUNNING session per workspace', () => {
       data: { status: 'ENDED', endTime: new Date(), totalSeconds: 3600, billedCents: 150 },
     });
 
-    // Open new session — should succeed because previous is ENDED
+    // Open new session, should succeed because previous is ENDED
     const session2 = await prisma.usageSession.create({
       data: {
         userId: testUserId,
@@ -238,7 +238,7 @@ describe('Partial Unique Index: one RUNNING session per workspace', () => {
     expect(session2.id).not.toBe(session1.id);
   });
 
-  test('concurrent race: two inserts for same workspace — exactly one wins', async () => {
+  test('concurrent race: two inserts for same workspace, exactly one wins', async () => {
     const ws = await createWorkspace();
 
     const results = await Promise.allSettled([
@@ -311,11 +311,11 @@ describe('Partial Unique Index: one RUNNING session per workspace', () => {
       }
     }
 
-    // First call — should create
+    // First call, should create
     const r1 = await guardedCreate();
     expect(r1.created).toBe(true);
 
-    // Second call — should be blocked by app guard or DB
+    // Second call, should be blocked by app guard or DB
     const r2 = await guardedCreate();
     expect(r2.created).toBe(false);
     expect(r2.session?.id).toBe(r1.session?.id);

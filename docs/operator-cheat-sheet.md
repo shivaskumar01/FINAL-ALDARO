@@ -117,13 +117,13 @@ WHERE status = 'RUNNING';
 
 ## Proof Execution Order
 
-1. **01 — Staging Readiness** (gate)
-2. **02 — Billing Parity**
-3. **03 — Terminate Outage Recovery**
-4. **04 — Last-GPU Contention**
-5. **07 — Cleanup Durability**
-6. **06 — Stack Leakage**
-7. **05 — Restore Drill** (last — stops services)
+1. **01, Staging Readiness** (gate)
+2. **02, Billing Parity**
+3. **03, Terminate Outage Recovery**
+4. **04, Last-GPU Contention**
+5. **07, Cleanup Durability**
+6. **06, Stack Leakage**
+7. **05, Restore Drill** (last, stops services)
 
 ---
 

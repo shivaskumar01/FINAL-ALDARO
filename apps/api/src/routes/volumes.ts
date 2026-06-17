@@ -25,7 +25,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   fastify.addHook('preHandler', fastify.authenticate as any);
   fastify.addHook('preHandler', fastify.requireCustomerApproved as any);
 
-  // POST /volumes — Create a new persistent volume
+  // POST /volumes, Create a new persistent volume
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
     const { name, sizeGb } = createVolumeSchema.parse(request.body);
@@ -55,7 +55,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return reply.status(201).send(volume);
   });
 
-  // GET /volumes — List user's volumes
+  // GET /volumes, List user's volumes
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
     const query = request.query as any;
@@ -88,7 +88,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return volumes;
   });
 
-  // GET /volumes/:id — Volume detail
+  // GET /volumes/:id, Volume detail
   fastify.get('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -120,7 +120,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return volume;
   });
 
-  // POST /volumes/:id/attach — Attach volume to a workspace
+  // POST /volumes/:id/attach, Attach volume to a workspace
   fastify.post('/:id/attach', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -200,7 +200,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return updated;
   });
 
-  // POST /volumes/:id/detach — Detach volume from workspace
+  // POST /volumes/:id/detach, Detach volume from workspace
   fastify.post('/:id/detach', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -239,7 +239,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return updated;
   });
 
-  // DELETE /volumes/:id — Delete a volume
+  // DELETE /volumes/:id, Delete a volume
   fastify.delete('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -283,7 +283,7 @@ export const volumeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     return updated;
   });
 
-  // PUT /volumes/:id — Rename a volume
+  // PUT /volumes/:id, Rename a volume
   fastify.put('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };

@@ -8,7 +8,7 @@ At least 1 active node. Must match a real Proxmox node name.
 
 ```
 FleetNode:
-  - name: "<real-proxmox-node-name>"   # e.g. "pve1" — must match Proxmox
+  - name: "<real-proxmox-node-name>"   # e.g. "pve1", must match Proxmox
     apiHost: "<proxmox-api-url>"       # e.g. "https://10.10.0.10:8006"
     status: "ACTIVE"
 ```

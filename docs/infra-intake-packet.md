@@ -42,7 +42,7 @@ lspci -nn | grep -i nvidia
 |---|---|---|---|
 | Template VMID | Integer | `9000` | Worker clones this template for new workspaces |
 | Template node | Node name | `pve1` | Where the template lives |
-| What's installed | Checklist below | — | Agent, CUDA, cloud-init must be pre-installed |
+| What's installed | Checklist below |, | Agent, CUDA, cloud-init must be pre-installed |
 
 **Template must include**:
 - [ ] Ubuntu 22.04 or 24.04
@@ -91,15 +91,15 @@ iptables -A INPUT -p tcp --dport 5001 -j ACCEPT            # gateway API (intern
 
 Once credentials arrive, we will:
 
-1. Run `scripts/validate-env.sh` — confirms all vars set + semantic checks
-2. Run `scripts/preflight-live-proof.sh` — confirms services boot, fleet seed, clean state
+1. Run `scripts/validate-env.sh`, confirms all vars set + semantic checks
+2. Run `scripts/preflight-live-proof.sh`, confirms services boot, fleet seed, clean state
 3. Seed fleet data:
-   - `fleet_nodes` — one row per Proxmox node
-   - `fleet_gpus` — one row per GPU with PCI address
-   - `vm_templates` — one row per template
-   - `gpu_skus` — pricing (already seeded locally)
-   - `warm_pool_config` — target counts per region/GPU type
-4. Run `scripts/run-proof.sh all` — executes all 7 proofs with evidence capture
+   - `fleet_nodes`, one row per Proxmox node
+   - `fleet_gpus`, one row per GPU with PCI address
+   - `vm_templates`, one row per template
+   - `gpu_skus`, pricing (already seeded locally)
+   - `warm_pool_config`, target counts per region/GPU type
+4. Run `scripts/run-proof.sh all`, executes all 7 proofs with evidence capture
 5. Package evidence via `scripts/package-proof-evidence.sh`
 
 ---

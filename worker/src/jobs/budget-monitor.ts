@@ -43,7 +43,7 @@ export async function budgetMonitorTick(prisma: PrismaClient) {
   }
 
   // -------------------------------------------------------------------------
-  // Organization budgets — same logic but scoped to org-owned workspaces
+  // Organization budgets, same logic but scoped to org-owned workspaces
   // -------------------------------------------------------------------------
   const orgsWithLimits = await prisma.organization.findMany({
     where: { monthlySoftLimitCents: { not: null } },
@@ -113,7 +113,7 @@ async function checkUserBudget(
   const recentlyCooled = user.lastBudgetAlertAt &&
     (now.getTime() - user.lastBudgetAlertAt.getTime()) < ALERT_COOLDOWN_MS;
 
-  // 100% threshold — auto-terminate if configured
+  // 100% threshold, auto-terminate if configured
   if (pct >= 100 && user.hardLimitAction === 'AUTO_TERMINATE') {
     const activeWorkspaces = await prisma.workspace.findMany({
       where: {
@@ -172,7 +172,7 @@ async function checkUserBudget(
     return;
   }
 
-  // 90% threshold — warning alert
+  // 90% threshold, warning alert
   if (pct >= 90 && !recentlyCooled) {
     console.log(`[BudgetMonitor] WARNING: user ${user.email} at ${pct}% of $${(limitCents / 100).toFixed(2)} monthly limit (MTD: $${(mtdSpendCents / 100).toFixed(2)})`);
 
@@ -241,7 +241,7 @@ async function checkUserBudget(
 }
 
 // ---------------------------------------------------------------------------
-// Organization budget check — aggregates spend across ALL org-owned workspaces
+// Organization budget check, aggregates spend across ALL org-owned workspaces
 // ---------------------------------------------------------------------------
 async function checkOrgBudget(
   prisma: PrismaClient,
@@ -297,7 +297,7 @@ async function checkOrgBudget(
   const recentlyCooled = org.lastBudgetAlertAt &&
     (now.getTime() - org.lastBudgetAlertAt.getTime()) < ALERT_COOLDOWN_MS;
 
-  // 100% — auto-terminate the org's entire fleet
+  // 100%, auto-terminate the org's entire fleet
   if (pct >= 100 && org.hardLimitAction === 'AUTO_TERMINATE') {
     const activeWorkspaces = await prisma.workspace.findMany({
       where: {
@@ -364,7 +364,7 @@ async function checkOrgBudget(
     return;
   }
 
-  // 90% — warning alert
+  // 90%, warning alert
   if (pct >= 90 && !recentlyCooled) {
     console.log(`[BudgetMonitor] WARNING ORG: "${org.slug}" at ${pct}% of $${(limitCents / 100).toFixed(2)} monthly limit (MTD: $${(mtdSpendCents / 100).toFixed(2)})`);
 

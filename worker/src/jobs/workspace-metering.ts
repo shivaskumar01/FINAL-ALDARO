@@ -93,7 +93,7 @@ async function processMeterOutboxEvent(
 
     const meter = await sendMeterEvent(stripeSecretKey, event, user.stripeCustomerId);
 
-    // Success: mark SENT + record Stripe ID + increment attempt count — all in one transaction.
+    // Success: mark SENT + record Stripe ID + increment attempt count, all in one transaction.
     await prisma.$transaction([
       prisma.workspaceMeterEventOutbox.update({
         where: { id: event.id },
@@ -142,7 +142,7 @@ export async function processWorkspaceMeterEvents(prisma: PrismaClient) {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeSecretKey) {
     if (!_stripeMissingWarned) {
-      console.warn('[Metering] STRIPE_SECRET_KEY not set — all meter events will be silently skipped. Billing is DISABLED.');
+      console.warn('[Metering] STRIPE_SECRET_KEY not set, all meter events will be silently skipped. Billing is DISABLED.');
       _stripeMissingWarned = true;
     }
     return;

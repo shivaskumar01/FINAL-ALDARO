@@ -17,7 +17,7 @@ export function getAgentSharedSecret(): string {
     // In dev, generate a random per-process secret so agents must use real bootstrap flow
     if (!_devSecret) {
       _devSecret = crypto.randomBytes(32).toString('hex');
-      console.warn('[AgentSession] No ALDARO_AGENT_SHARED_SECRET set — using random per-process dev secret');
+      console.warn('[AgentSession] No ALDARO_AGENT_SHARED_SECRET set, using random per-process dev secret');
     }
     return _devSecret;
   }

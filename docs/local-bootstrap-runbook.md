@@ -151,7 +151,7 @@ npm run dev:web
 
 Opens at `http://localhost:3000`.
 
-### Worker (requires Postgres — see below)
+### Worker (requires Postgres, see below)
 
 The worker uses `pg_try_advisory_lock` and **cannot run on SQLite**. For local worker development, you need a local Postgres instance.
 
@@ -241,8 +241,8 @@ aldaro --help
 | apps/web | `next dev` | `next build` | `next start` | Missing | Missing | `next lint` |
 | apps/gateway | `tsx watch` | `tsc` | `node dist/` | Missing | Missing | Missing |
 | worker | `tsx watch` | `tsc` | `node dist/` | Missing | Missing | Missing |
-| packages/db | — | `tsc` | — | Missing | Missing | Missing |
-| packages/shared | — | `tsc` | — | Missing | Missing | Missing |
+| packages/db |, | `tsc` |, | Missing | Missing | Missing |
+| packages/shared |, | `tsc` |, | Missing | Missing | Missing |
 
 **Missing scripts**: `test`, `typecheck`, and `lint` are absent from API, gateway, worker, packages/db, and packages/shared. Only web has lint (via Next.js).
 
@@ -301,7 +301,7 @@ aldaro --help
 ## Local Postgres Path (Verified 2026-03-12)
 
 For worker development or staging-like local testing, see:
-- [staging-postgres-path.md](staging-postgres-path.md) — strategy and validation notes
-- [local-proof-postgres-worker-2026-03-12.md](local-proof-postgres-worker-2026-03-12.md) — evidence
+- [staging-postgres-path.md](staging-postgres-path.md), strategy and validation notes
+- [local-proof-postgres-worker-2026-03-12.md](local-proof-postgres-worker-2026-03-12.md), evidence
 
 The worker's Postgres startup path, advisory lock, and warm-pool tick have been locally verified up to the Proxmox API boundary. Real infrastructure interactions are still unproven.

@@ -135,7 +135,7 @@ From `workspace-cleanup.ts` stale sweeper:
 |---|---|
 | Incident | Created (dead-letter) |
 | Cleanup job | Status set to DEAD_LETTER |
-| Other resources | May be leaked — incident alerts operator |
+| Other resources | May be leaked, incident alerts operator |
 
 ---
 

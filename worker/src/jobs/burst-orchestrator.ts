@@ -115,7 +115,7 @@ async function checkDemandAndProvision(prisma: PrismaClient) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Timeout detection — mark stale PROVISIONING nodes as failed
+// 2. Timeout detection, mark stale PROVISIONING nodes as failed
 // ---------------------------------------------------------------------------
 async function checkProvisionTimeout(prisma: PrismaClient) {
   const cutoff = new Date(Date.now() - PROVISION_TIMEOUT_MS);

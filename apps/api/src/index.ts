@@ -131,7 +131,7 @@ fastify.addHook('onSend', async (request, reply, payload) => {
   return payload;
 });
 
-// SECURITY: Allowed dev origins — explicit list, not wildcard prefix matching
+// SECURITY: Allowed dev origins, explicit list, not wildcard prefix matching
 const DEV_ALLOWED_ORIGINS = new Set([
   'http://localhost:3000',
   'http://localhost:3001',
@@ -290,7 +290,7 @@ fastify.addHook('preHandler', async (request: any, reply: any) => {
 });
 
 // Auth middleware
-// SECURITY: Stateless JWT verification only — no DB lookup per request.
+// SECURITY: Stateless JWT verification only, no DB lookup per request.
 // Access tokens are short-lived (15 min). User status (ACTIVE/BLOCKED)
 // and password validity are verified on token refresh (/auth/refresh).
 // A blocked user is forcibly logged out within at most 15 minutes.

@@ -41,13 +41,13 @@ No authentication. Returns:
 
 **Port allocation**: Random selection with 1000 retry attempts. Throws if pool exhausted.
 
-**iptables/nftables**: Comments indicate rules should be configured — **NOT implemented in code**.
+**iptables/nftables**: Comments indicate rules should be configured, **NOT implemented in code**.
 
 ### POST /internal/gateway/release (Authenticated)
 
 **Request**: `{ workspace_id: string, nonce?: string, timestamp?: number }`
 
-**Response**: `{ ok: true }` (always 200, even if workspace not found — idempotent)
+**Response**: `{ ok: true }` (always 200, even if workspace not found, idempotent)
 
 **Logic**:
 1. Validate body (Zod)
@@ -65,7 +65,7 @@ No authentication. Returns:
 2. Sends as `x-gateway-signature` header
 3. Gateway recomputes over raw request body and compares with `crypto.timingSafeEqual()`
 
-**Raw body capture**: Custom content-type parser stores raw body before JSON parsing — prevents signature bypass via format changes.
+**Raw body capture**: Custom content-type parser stores raw body before JSON parsing, prevents signature bypass via format changes.
 
 **Dev mode**: If `GATEWAY_SERVICE_SECRET` not set in development, auth is skipped. Production exits on missing secret.
 
@@ -107,7 +107,7 @@ No authentication. Returns:
 
 - `checkPortLeaks()` finds `workspaceEndpoint` records with `releasedAt: null` where workspace is TERMINATED/FAILED
 - Auto-marks as released in DB
-- **Does NOT call gateway release** — if gateway has stale allocation, it persists until restart
+- **Does NOT call gateway release**, if gateway has stale allocation, it persists until restart
 
 ---
 
@@ -115,10 +115,10 @@ No authentication. Returns:
 
 | Variable | Default | Required |
 |---|---|---|
-| `GATEWAY_SERVICE_SECRET` | — | Yes (production) |
+| `GATEWAY_SERVICE_SECRET` |, | Yes (production) |
 | `GATEWAY_PORT` | 5001 | No |
 | `GATEWAY_HOST` | gw1.aldaro.ai | No |
-| `DATABASE_URL` | — | Yes (for durable leases; ephemeral mode if absent) |
+| `DATABASE_URL` |, | Yes (for durable leases; ephemeral mode if absent) |
 | Port range | 20000-40000 | Hard-coded |
 
 **Shared secrets**: `GATEWAY_SERVICE_SECRET` must match across API, Worker, and Gateway.
@@ -130,12 +130,12 @@ No authentication. Returns:
 
 | # | Issue | Severity | Remediation Status |
 |---|---|---|---|
-| 1 | **All state in-memory** — crash loses all allocations | Critical | **REMEDIATED** — Gateway now persists leases to `workspace_endpoints` DB table and reconstructs on startup |
-| 2 | **No iptables/nftables rules** — ports allocated but traffic not forwarded | Critical | Open — requires real infrastructure |
-| 3 | **Credentials not delivered to agent** — Jupyter tokens generated but never sent | Critical | Open — requires agent protocol work |
-| 4 | Port pool exhaustion with 1000 random-retry limit | High | Open — low priority at current scale |
-| 5 | Port leak detection marks DB only, not gateway | Medium | **REMEDIATED** — Gateway startup reconciliation detects and auto-releases stale leases |
-| 6 | No allocation TTL or heartbeat | Medium | Partially mitigated — stale lease detection on startup covers crash scenarios |
+| 1 | **All state in-memory**, crash loses all allocations | Critical | **REMEDIATED**, Gateway now persists leases to `workspace_endpoints` DB table and reconstructs on startup |
+| 2 | **No iptables/nftables rules**, ports allocated but traffic not forwarded | Critical | Open, requires real infrastructure |
+| 3 | **Credentials not delivered to agent**, Jupyter tokens generated but never sent | Critical | Open, requires agent protocol work |
+| 4 | Port pool exhaustion with 1000 random-retry limit | High | Open, low priority at current scale |
+| 5 | Port leak detection marks DB only, not gateway | Medium | **REMEDIATED**, Gateway startup reconciliation detects and auto-releases stale leases |
+| 6 | No allocation TTL or heartbeat | Medium | Partially mitigated, stale lease detection on startup covers crash scenarios |
 
 ---
 
@@ -162,8 +162,8 @@ CRASH:     Cache lost → next startup rebuilds from DB → no leases lost
 
 ### DB guarantees
 
-- `WorkspaceEndpoint.workspaceId` is `@unique` — one lease per workspace
-- `WorkspaceEndpoint.sshPort`, `jupyterPort`, `vscodePort` are each `@unique` — no port collisions at DB level
+- `WorkspaceEndpoint.workspaceId` is `@unique`, one lease per workspace
+- `WorkspaceEndpoint.sshPort`, `jupyterPort`, `vscodePort` are each `@unique`, no port collisions at DB level
 - `releasedAt IS NULL` distinguishes active from released leases
 
 ### Tests (23/23 pass on local Postgres, 2026-03-13)
@@ -185,7 +185,7 @@ A lease is "stale" if:
 
 This means the workspace reached a terminal state but cleanup never released the endpoint (crash, cleanup exhaustion, or gateway never called). On gateway startup, `reconcileLeases()` finds and releases all stale leases automatically.
 
-**What is NOT considered stale**: Workspaces in `CREATING`, `WAITING_FOR_AGENT`, `WARM_AVAILABLE`, `RUNNING_ASSIGNED`, or `TERMINATING` — these are still in lifecycle and their leases should remain active.
+**What is NOT considered stale**: Workspaces in `CREATING`, `WAITING_FOR_AGENT`, `WARM_AVAILABLE`, `RUNNING_ASSIGNED`, or `TERMINATING`, these are still in lifecycle and their leases should remain active.
 
 ### Firewall/NAT assumptions (documented, not implemented)
 
@@ -197,7 +197,7 @@ The gateway currently allocates ports and tracks leases but does **not** configu
 
 ---
 
-## What This Audit Proves (L1 — locally verified)
+## What This Audit Proves (L1, locally verified)
 
 - Gateway leases are durably persisted in `workspace_endpoints` table
 - Gateway restart reconstructs active leases from DB (no lease loss)
@@ -217,7 +217,7 @@ The gateway currently allocates ports and tracks leases but does **not** configu
 - Gateway actually boots and serves HTTP requests end-to-end (needs running instance test)
 - HMAC verification works end-to-end over HTTP (tested at function level, not HTTP level)
 - Port allocation under high concurrent load (>100 simultaneous allocates)
-- iptables/nftables rules work (not implemented — real infra dependency)
+- iptables/nftables rules work (not implemented, real infra dependency)
 - Credential delivery to agent works (not implemented)
 - Multi-gateway instance coordination (single instance assumed)
 - Ephemeral mode cannot accidentally be used in staging (warning exists but no hard-fail for non-local envs)

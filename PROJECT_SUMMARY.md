@@ -6,7 +6,7 @@
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 FINAL Aldaro.AI/
@@ -27,7 +27,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🚀 Key Applications
+## Key Applications
 
 ### Frontend (`apps/web`)
 - **Framework:** Next.js 13.5.6
@@ -62,7 +62,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🗄️ Database (Prisma + SQLite)
+## Database (Prisma + SQLite)
 
 **Schema Includes:**
 - `User`, `StripeCustomer`, `Workspace`, `WorkspaceSession`
@@ -74,7 +74,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🔧 Recent Fixes Applied
+## Recent Fixes Applied
 
 1. **JSX Syntax Error (apps/web/app/app/page.tsx)**
    - Added missing closing `</div>` for left column wrapper
@@ -90,7 +90,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🌐 URLs
+## URLs
 
 - **Frontend:** http://localhost:3000
 - **Dashboard:** http://localhost:3000/app
@@ -99,7 +99,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 📦 Dependencies
+## Dependencies
 
 ### Frontend
 - `next`, `react`, `framer-motion`, `axios`, `zustand`, `lucide-react`
@@ -112,7 +112,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🔐 Environment Variables
+## Environment Variables
 
 **.env files required:**
 - `apps/api/.env` - Database URL, JWT secret, Stripe keys, Proxmox credentials
@@ -121,7 +121,7 @@ FINAL Aldaro.AI/
 
 ---
 
-## 🏃 Running the Project
+## Running the Project
 
 ```bash
 # Install dependencies (root)
@@ -139,7 +139,7 @@ cd worker && npm run dev
 
 ---
 
-## 📝 Architecture Highlights
+## Architecture Highlights
 
 ### Fleet-Owned Infrastructure
 - Moved from RunPod (3rd party) to **self-hosted Proxmox fleet**
@@ -161,14 +161,14 @@ cd worker && npm run dev
 
 ---
 
-## ✅ Production Readiness
+## Production Readiness
 
-- ✅ Compile errors fixed
-- ✅ CORS configured for localhost
-- ✅ Database seeded with fleet nodes & GPUs
-- ✅ Authentication & billing implemented
-- ✅ Worker jobs for resource management
-- ✅ Modern, optimized UI with animations
+- Compile errors fixed
+- CORS configured for localhost
+- Database seeded with fleet nodes & GPUs
+- Authentication & billing implemented
+- Worker jobs for resource management
+- Modern, optimized UI with animations
 
 ---
 

@@ -7,7 +7,7 @@ import { decryptSecret } from '@aldaro/shared';
  * Webhook Delivery Job (A4 FIX)
  *
  * Previously, emitters (e.g. budget-monitor) created `webhookDelivery` rows with
- * status=PENDING, but NOTHING drained them — the only sender was the inline test button.
+ * status=PENDING, but NOTHING drained them, the only sender was the inline test button.
  * This job delivers PENDING rows with HMAC signing, SSRF protection (fail-closed, A15),
  * exponential backoff, and endpoint auto-disable after repeated failures.
  */
@@ -25,7 +25,7 @@ function nextBackoff(attemptCount: number): number {
 
 /**
  * SECURITY (A15): resolve the destination and block private/loopback/link-local ranges.
- * Fails CLOSED — if DNS yields nothing or errors, the delivery is blocked, not allowed.
+ * Fails CLOSED, if DNS yields nothing or errors, the delivery is blocked, not allowed.
  */
 async function isBlockedDestination(hostname: string): Promise<boolean> {
   try {

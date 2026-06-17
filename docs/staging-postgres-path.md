@@ -5,22 +5,22 @@
 - Prisma `schema.prisma` datasource is set to `provider = "sqlite"` with `url = env("DATABASE_URL")`
 - Local dev uses `file:./dev.db` (SQLite)
 - Production intent is Postgres (documented, not yet implemented)
-- Worker uses `pg_try_advisory_lock` which is Postgres-only — **worker cannot run on SQLite**
+- Worker uses `pg_try_advisory_lock` which is Postgres-only, **worker cannot run on SQLite**
 
 ## What Assumes SQLite
 
-1. **schema.prisma** `provider = "sqlite"` — this is the main gate
-2. **packages/db/.env** — `DATABASE_URL="file:./dev.db"`
-3. **apps/api/.env** — `DATABASE_URL="file:/Users/shivaskumar/...dev.db"`
-4. **Prisma migrations** under `packages/db/prisma/migrations/` — generated for SQLite
+1. **schema.prisma** `provider = "sqlite"`, this is the main gate
+2. **packages/db/.env**, `DATABASE_URL="file:./dev.db"`
+3. **apps/api/.env**, `DATABASE_URL="file:/Users/shivaskumar/...dev.db"`
+4. **Prisma migrations** under `packages/db/prisma/migrations/`, generated for SQLite
 
 ## What Would Break on Postgres Without Changes
 
 1. **Prisma provider mismatch**: If `schema.prisma` says `sqlite` but `DATABASE_URL` points to Postgres, Prisma will error. The provider must match the target.
 2. **Migrations**: SQLite migrations are not directly compatible with Postgres. A fresh `prisma migrate dev` against Postgres will generate new Postgres-native migrations.
-3. **Worker leader lock**: `pg_try_advisory_lock` works on Postgres, fails on SQLite. This is correct for staging — the worker is designed for Postgres.
-4. **BigInt handling**: The `Artifact.bytes` field uses `BigInt` — works on both but serialization differs.
-5. **Decimal fields**: `FleetDailyAgg`, `WorkspaceVerification` use `Decimal` — Postgres uses `numeric`, SQLite stores as text. Querying/sorting behavior may differ.
+3. **Worker leader lock**: `pg_try_advisory_lock` works on Postgres, fails on SQLite. This is correct for staging, the worker is designed for Postgres.
+4. **BigInt handling**: The `Artifact.bytes` field uses `BigInt`, works on both but serialization differs.
+5. **Decimal fields**: `FleetDailyAgg`, `WorkspaceVerification` use `Decimal`, Postgres uses `numeric`, SQLite stores as text. Querying/sorting behavior may differ.
 
 ## Strategy: Environment-Driven Provider Switching
 
@@ -56,8 +56,8 @@ Keep local dev on SQLite. Create a staging schema for Postgres. Once staging is 
 Steps 1-7 below have been executed locally and verified:
 - PostgreSQL 15.17 installed (Homebrew, aarch64)
 - `schema.staging.prisma` created with `provider = "postgresql"`
-- `prisma db push` succeeded — 37 tables created
-- `prisma generate` succeeded — client generated for Postgres
+- `prisma db push` succeeded, 37 tables created
+- `prisma generate` succeeded, client generated for Postgres
 - Seed script ran successfully (existing `seed.ts`, not `seed-staging.ts`)
 - Worker started against local Postgres, acquired advisory lock, ran ticks
 - Worker reached the Proxmox clone boundary and handled the failure cleanly
@@ -93,8 +93,8 @@ npx prisma studio --schema packages/db/prisma/schema.staging.prisma
 
 ## Code That Needs Attention for Postgres
 
-1. **Worker leader lock** (`worker/src/index.ts:102`): Uses `pg_try_advisory_lock` — correct for Postgres, will fail on SQLite. This is expected.
-2. **Worker shutdown** (`worker/src/index.ts:579`): Uses `pg_advisory_unlock` — same.
+1. **Worker leader lock** (`worker/src/index.ts:102`): Uses `pg_try_advisory_lock`, correct for Postgres, will fail on SQLite. This is expected.
+2. **Worker shutdown** (`worker/src/index.ts:579`): Uses `pg_advisory_unlock`, same.
 3. **Raw queries**: Search for `$queryRaw` and `$executeRaw` across the codebase to verify Postgres compatibility.
 
 ## Local vs Staging Database Path Summary

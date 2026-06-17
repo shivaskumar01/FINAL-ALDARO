@@ -205,7 +205,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   });
 
   // ---------------------------------------------------------------------------
-  // Port Exposure — Zero Trust Tunnels
+  // Port Exposure, Zero Trust Tunnels
   // ---------------------------------------------------------------------------
 
   const exposePortSchema = z.object({
@@ -217,7 +217,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     access_mode: z.enum(['PUBLIC', 'PRIVATE']),
   });
 
-  // POST /:id/ports — Expose a port
+  // POST /:id/ports, Expose a port
   fastify.post('/:id/ports', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const { id } = request.params;
@@ -290,7 +290,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     };
   });
 
-  // GET /:id/ports — List exposed ports for workspace
+  // GET /:id/ports, List exposed ports for workspace
   fastify.get('/:id/ports', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const { id } = request.params;
@@ -324,7 +324,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     }));
   });
 
-  // DELETE /:id/ports/:portId — Release exposed port
+  // DELETE /:id/ports/:portId, Release exposed port
   fastify.delete('/:id/ports/:portId', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const { id, portId } = request.params;
@@ -361,7 +361,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     return { ok: true };
   });
 
-  // PUT /:id/ports/:portId — Update access mode
+  // PUT /:id/ports/:portId, Update access mode
   fastify.put('/:id/ports/:portId', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const { id, portId } = request.params;

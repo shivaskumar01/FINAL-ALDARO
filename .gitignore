@@ -69,3 +69,6 @@ service-account*.json
 tmp/
 temp/
 *.tmp
+
+# local agent config
+.claude/

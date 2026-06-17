@@ -28,7 +28,7 @@
 
 ### 1. At most one RUNNING session per workspace
 
-**Current enforcement**: Application guard in `startUsageSession()` — `findFirst({ status: 'RUNNING' })` before `create()`.
+**Current enforcement**: Application guard in `startUsageSession()`, `findFirst({ status: 'RUNNING' })` before `create()`.
 
 **Risk**: Two concurrent `startUsageSession` calls could both pass the check and create two RUNNING sessions. This would cause double billing.
 
@@ -47,27 +47,27 @@ WHERE status = 'RUNNING';
 // migrations/YYYYMMDD_add_running_session_constraint/migration.sql
 ```
 
-**Priority**: Medium — the application guard works under normal conditions, but a DB constraint would catch bugs.
+**Priority**: Medium, the application guard works under normal conditions, but a DB constraint would catch bugs.
 
 ---
 
 ### 2. One active (unreleased) gateway lease per workspace
 
-**Current enforcement**: `workspaceId @unique` on `workspace_endpoints` — but this allows ONE row per workspace, not one ACTIVE row. If a workspace is released and then re-allocated, the old row's `releasedAt` is set but the upsert overwrites the same row.
+**Current enforcement**: `workspaceId @unique` on `workspace_endpoints`, but this allows ONE row per workspace, not one ACTIVE row. If a workspace is released and then re-allocated, the old row's `releasedAt` is set but the upsert overwrites the same row.
 
-**Status**: **Effectively enforced** — the `@unique` constraint on `workspaceId` means there's only ever one endpoint record per workspace. The upsert pattern uses this as the key. No additional constraint needed.
+**Status**: **Effectively enforced**, the `@unique` constraint on `workspaceId` means there's only ever one endpoint record per workspace. The upsert pattern uses this as the key. No additional constraint needed.
 
 ---
 
 ### 3. One active GPU allocation per GPU (beyond what exists)
 
-**Current enforcement**: `gpuId @unique` on `workspace_gpu_allocations` — prevents two allocations for the same GPU. But this is absolute (including released allocations). If GPU is released (`releasedAt` set) and re-allocated, a new row can't be created because `gpuId` is still unique.
+**Current enforcement**: `gpuId @unique` on `workspace_gpu_allocations`, prevents two allocations for the same GPU. But this is absolute (including released allocations). If GPU is released (`releasedAt` set) and re-allocated, a new row can't be created because `gpuId` is still unique.
 
 **Issue**: The current model tracks GPU allocation history by updating `releasedAt` on the existing row, then creating a new row. But `gpuId @unique` prevents this.
 
 **Analysis**: Looking at the code, `workspaceGpuAllocation.deleteMany` is used on failed provision rollback, and `update` with `releasedAt` is used on cleanup. The `gpuId @unique` constraint means a GPU can only have one allocation row ever (not one active row). Re-allocation would need to delete or update the old row first.
 
-**Status**: **Needs investigation** — the constraint may be too strict for GPU reuse. But since warm-pool workspaces are disposable and GPUs are released by deleting the allocation row (on failure) or setting `releasedAt` then later new allocation, this may cause issues on GPU reuse.
+**Status**: **Needs investigation**, the constraint may be too strict for GPU reuse. But since warm-pool workspaces are disposable and GPUs are released by deleting the allocation row (on failure) or setting `releasedAt` then later new allocation, this may cause issues on GPU reuse.
 
 **Recommendation**: Consider changing to a partial unique index if GPU reuse is expected:
 ```sql
@@ -78,19 +78,19 @@ WHERE "releasedAt" IS NULL;
 
 But only after confirming the current allocation pattern works for GPU reuse scenarios.
 
-**Priority**: Low — current flow works because provision failure deletes the allocation row.
+**Priority**: Low, current flow works because provision failure deletes the allocation row.
 
 ---
 
 ### 4. Workspace status transitions
 
-**Current enforcement**: None — status is set directly via `workspace.update({ data: { status: 'NEW_STATUS' } })`. No CHECK constraint or trigger validates transitions.
+**Current enforcement**: None, status is set directly via `workspace.update({ data: { status: 'NEW_STATUS' } })`. No CHECK constraint or trigger validates transitions.
 
 **Risk**: A bug could cause an invalid transition (e.g., TERMINATED → RUNNING_ASSIGNED).
 
 **Recommendation**: Consider a CHECK constraint or trigger to validate transitions. However, this adds complexity and may not be worth it for the current codebase size.
 
-**Priority**: Low — control flow logic prevents invalid transitions. Adding a DB constraint would be defensive hardening.
+**Priority**: Low, control flow logic prevents invalid transitions. Adding a DB constraint would be defensive hardening.
 
 ---
 
@@ -126,6 +126,6 @@ All upserts in the codebase use fields that have `@unique` constraints:
 ## Summary
 
 - **14 of 14** existing upsert targets are backed by DB-level unique constraints
-- **1 critical invariant** (one RUNNING session per workspace) is application-only — partial unique index recommended
+- **1 critical invariant** (one RUNNING session per workspace) is application-only, partial unique index recommended
 - All other critical invariants are DB-enforced
 - No new race-safe logic depends on missing constraints

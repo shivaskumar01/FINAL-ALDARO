@@ -83,7 +83,7 @@ CSRF middleware is registered globally at `apps/api/src/index.ts:191`. It enforc
 
 **Approve/reject/suspend are POST routes** registered under the author route group which uses cookie-based auth. They should be CSRF-protected by the global middleware.
 
-**Assessment**: CSRF appears to cover approve/reject/suspend based on code structure. This is L0 — not tested in production mode to confirm the middleware actually fires on these specific routes.
+**Assessment**: CSRF appears to cover approve/reject/suspend based on code structure. This is L0, not tested in production mode to confirm the middleware actually fires on these specific routes.
 
 ---
 
@@ -107,7 +107,7 @@ Both approve and reject use `prisma.$transaction([...])` which is a sequential t
 1. Update user: `customerAccessStatus` → `SUSPENDED`, `isAlphaTester` → false
 2. Create audit record: `CUSTOMER_SUSPEND`
 
-All three use `$transaction` — if any step fails, all roll back. This is correct behavior.
+All three use `$transaction`, if any step fails, all roll back. This is correct behavior.
 
 ---
 
@@ -129,7 +129,7 @@ Audit records are stored in `authorAudit` table via `prisma.authorAudit.create()
 |---|---|---|---|
 | Approve | Yes | `APPLICATION_ACCEPTED` | `APPLICATION_ACCEPTED:{applicationId}` |
 | Reject | Yes | `APPLICATION_REJECTED` | `APPLICATION_REJECTED:{applicationId}` |
-| Suspend | **No** | — | — |
+| Suspend | **No** |, |, |
 
 **Finding**: Suspend does NOT create an email outbox record. The customer is not notified when their account is suspended. This may be intentional (admin contacts directly) or a gap.
 
@@ -171,11 +171,11 @@ All routes check for application existence and return 404 if not found.
 
 | Risk | Severity | Status |
 |---|---|---|
-| No suspend email notification | Low | Design decision — needs confirmation |
-| No unsuspend path | Medium | SUSPENDED is terminal in current code — no route to restore |
-| CSRF not verified in production mode | Medium | L0 only — needs local production-mode test |
+| No suspend email notification | Low | Design decision, needs confirmation |
+| No unsuspend path | Medium | SUSPENDED is terminal in current code, no route to restore |
+| CSRF not verified in production mode | Medium | L0 only, needs local production-mode test |
 | No rate limiting on approve/reject | Low | Author-only routes, low abuse risk |
-| Zod validation error format may leak details | Low | `body.error.flatten()` is returned on reject/suspend — check if this exposes internal schema info |
+| Zod validation error format may leak details | Low | `body.error.flatten()` is returned on reject/suspend, check if this exposes internal schema info |
 | `resolveCustomerAccessStatus` edge cases | Low | Needs verification for null/undefined customerAccessStatus |
 
 ---

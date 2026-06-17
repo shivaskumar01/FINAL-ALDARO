@@ -129,7 +129,7 @@ export const customerAccessRoutes: FastifyPluginAsync = async (fastify: FastifyI
     }
 
     const now = Date.now();
-    // SECURITY: DB-backed cooldown check — survives API restarts and works across instances.
+    // SECURITY: DB-backed cooldown check, survives API restarts and works across instances.
     const recentEmail = await prisma.emailOutbox.findFirst({
       where: {
         userId,

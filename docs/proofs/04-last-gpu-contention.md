@@ -177,11 +177,11 @@ GROUP BY \"gpuType\", status;
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| Requests not actually concurrent | One finishes before the other starts — no real contention. Check timestamps: `RACE_START` to `RACE_END` should be <1s |
-| Loser fails at quota check | If same user with maxActiveWorkspaces=1, second request is rejected before reaching GPU selection — you tested quota, not GPU contention. Use two different users. |
-| Warm pool assignment (not cold) | If a WARM_AVAILABLE workspace exists, the race happens at warm assignment, not GPU allocation — different code path. Ensure no warm pool workspaces exist. |
-| Worker hasn't processed yet | Both requests create CREATING workspaces, worker hasn't picked either up — wait longer or check worker tick |
-| GPU selection is `findFirst` without lock | Current code uses `findFirst` without `FOR UPDATE` — both requests may select the same GPU but only one `$transaction` succeeds. This is the expected behavior but should be documented as a serialization point. |
+| Requests not actually concurrent | One finishes before the other starts, no real contention. Check timestamps: `RACE_START` to `RACE_END` should be <1s |
+| Loser fails at quota check | If same user with maxActiveWorkspaces=1, second request is rejected before reaching GPU selection, you tested quota, not GPU contention. Use two different users. |
+| Warm pool assignment (not cold) | If a WARM_AVAILABLE workspace exists, the race happens at warm assignment, not GPU allocation, different code path. Ensure no warm pool workspaces exist. |
+| Worker hasn't processed yet | Both requests create CREATING workspaces, worker hasn't picked either up, wait longer or check worker tick |
+| GPU selection is `findFirst` without lock | Current code uses `findFirst` without `FOR UPDATE`, both requests may select the same GPU but only one `$transaction` succeeds. This is the expected behavior but should be documented as a serialization point. |
 
 ---
 
@@ -189,7 +189,7 @@ GROUP BY \"gpuType\", status;
 
 | Path | File:Line | Behavior |
 |---|---|---|
-| GPU allocation | `warm-pool.ts:157-173` | `$transaction([fleetGpu.update, gpuAllocation.create])` — atomic |
+| GPU allocation | `warm-pool.ts:157-173` | `$transaction([fleetGpu.update, gpuAllocation.create])`, atomic |
 | Cold GPU allocation | `warm-pool.ts:357-373` | Same atomic pattern for cold provisions |
 | GPU rollback on failure | `warm-pool.ts:242-261` | GPU freed + allocation deleted on provision failure |
 | Launch idempotency | `workspaceService.ts:41-71` | `WorkspaceLaunchOperation` with `@@unique([userId, operationKey])` |

@@ -5,12 +5,12 @@ import Redis from 'ioredis';
  *
  * Backed by Redis when REDIS_URL is set, otherwise an in-memory Map (single-instance
  * dev fallback). Used for security primitives that must be shared across API replicas:
- *  - JWT jti revocation denylist (A13) — instant logout / ban within the 15-min window
- *  - agent callback replay nonces (A14) — per-instance caches are replay-bypassable at scale
+ *  - JWT jti revocation denylist (A13), instant logout / ban within the 15-min window
+ *  - agent callback replay nonces (A14), per-instance caches are replay-bypassable at scale
  *
  * Degradation: if REDIS_URL is set but Redis errors, reads return "miss" and the
  * check-and-set returns "fresh" (fail-open). For 15-min tokens and best-effort replay
- * defense this is the safe failure mode — it never locks legitimate users/agents out.
+ * defense this is the safe failure mode, it never locks legitimate users/agents out.
  */
 
 let _redis: Redis | null = null;

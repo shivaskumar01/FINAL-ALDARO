@@ -66,7 +66,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   fastify.addHook('preHandler', fastify.authenticate as any);
 
   // -------------------------------------------------------------------------
-  // POST /webhooks — Create a webhook endpoint
+  // POST /webhooks, Create a webhook endpoint
   // -------------------------------------------------------------------------
   fastify.post('/', {
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
@@ -85,7 +85,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       });
     }
 
-    // SECURITY: Block SSRF — reject internal/private webhook URLs
+    // SECURITY: Block SSRF, reject internal/private webhook URLs
     if (isBlockedWebhookUrl(body.url)) {
       return reply.status(400).send({
         errorCode: 'INVALID_WEBHOOK_URL',
@@ -97,7 +97,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
 
     // Auto-generate HMAC signing secret
     const rawSecret = `whsec_${crypto.randomBytes(32).toString('base64url')}`;
-    // Encrypt at rest — decrypted on dispatch for HMAC signing
+    // Encrypt at rest, decrypted on dispatch for HMAC signing
     const encryptedSecret = encryptSecret(rawSecret);
 
     const endpoint = await prisma.webhookEndpoint.create({
@@ -121,7 +121,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   });
 
   // -------------------------------------------------------------------------
-  // GET /webhooks — List user's webhook endpoints
+  // GET /webhooks, List user's webhook endpoints
   // -------------------------------------------------------------------------
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
@@ -151,7 +151,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   });
 
   // -------------------------------------------------------------------------
-  // PUT /webhooks/:id — Update endpoint url/events/enabled
+  // PUT /webhooks/:id, Update endpoint url/events/enabled
   // -------------------------------------------------------------------------
   fastify.put('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -213,7 +213,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   });
 
   // -------------------------------------------------------------------------
-  // DELETE /webhooks/:id — Delete a webhook endpoint
+  // DELETE /webhooks/:id, Delete a webhook endpoint
   // -------------------------------------------------------------------------
   fastify.delete('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -242,7 +242,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   });
 
   // -------------------------------------------------------------------------
-  // POST /webhooks/:id/test — Send a test webhook delivery
+  // POST /webhooks/:id/test, Send a test webhook delivery
   // -------------------------------------------------------------------------
   fastify.post('/:id/test', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -284,7 +284,7 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
   });
 
   // -------------------------------------------------------------------------
-  // GET /webhooks/:id/deliveries — List recent deliveries
+  // GET /webhooks/:id/deliveries, List recent deliveries
   // -------------------------------------------------------------------------
   fastify.get('/:id/deliveries', async (request: any, reply) => {
     const userId = request.user.userId;

@@ -19,12 +19,12 @@ Maps every stale/orphan state a workspace can reach, what the sweeper or cleanup
 | Resource | Current state | Sweeper action | Cleanup job action | Leak if cleanup exhausts |
 |---|---|---|---|---|
 | Workspace | status=CREATING, updatedAt stale | Sets TERMINATING, enqueues cleanup job | Runs standard cleanup path | Stuck in TERMINATING until incident |
-| FleetGpu | ALLOCATED, currentWorkspaceId set | — | Released to FREE | GPU locked permanently |
-| VM (Proxmox) | May exist partially | — | stopVm + deleteVm (best-effort) | Orphan VM on Proxmox node |
-| WorkspaceGpuAllocation | Exists, no releasedAt | — | releasedAt set | Stale allocation record |
-| WorkspaceEndpoint | May not exist | — | releasedAt set (if exists) | No leak (never created) |
-| UsageSession | May not exist | — | Finalized (if exists) | Possible leaked RUNNING session |
-| Gateway ports | May not be allocated | — | Release call (if allocated) | Port leak in gateway |
+| FleetGpu | ALLOCATED, currentWorkspaceId set |, | Released to FREE | GPU locked permanently |
+| VM (Proxmox) | May exist partially |, | stopVm + deleteVm (best-effort) | Orphan VM on Proxmox node |
+| WorkspaceGpuAllocation | Exists, no releasedAt |, | releasedAt set | Stale allocation record |
+| WorkspaceEndpoint | May not exist |, | releasedAt set (if exists) | No leak (never created) |
+| UsageSession | May not exist |, | Finalized (if exists) | Possible leaked RUNNING session |
+| Gateway ports | May not be allocated |, | Release call (if allocated) | Port leak in gateway |
 
 **Verification query**:
 ```sql
@@ -37,16 +37,16 @@ WHERE status = 'CREATING' AND "updatedAt" < NOW() - INTERVAL '15 minutes';
 
 ### 2. TERMINATING stuck >10 minutes (no cleanup job)
 
-**How it happens**: API sets TERMINATING and enqueues a cleanup job, but the job row is lost (DB error between status update and job insert — not transactional today) or the job itself is missing.
+**How it happens**: API sets TERMINATING and enqueues a cleanup job, but the job row is lost (DB error between status update and job insert, not transactional today) or the job itself is missing.
 
 | Resource | Current state | Sweeper action | Cleanup job action | Leak if cleanup exhausts |
 |---|---|---|---|---|
 | Workspace | status=TERMINATING | Upserts cleanup job (re-creates if missing) | Runs standard cleanup path | Stuck until incident |
-| FleetGpu | ALLOCATED | — | Released to FREE | GPU locked |
-| VM | Running or stopped | — | stopVm + deleteVm | Orphan VM |
-| WorkspaceEndpoint | Active | — | releasedAt set | Port leak |
-| UsageSession | RUNNING | — | Finalized atomically | Billing leak (RUNNING forever) |
-| MeterOutbox | Not yet created | — | Created via session finalize | Revenue leak |
+| FleetGpu | ALLOCATED |, | Released to FREE | GPU locked |
+| VM | Running or stopped |, | stopVm + deleteVm | Orphan VM |
+| WorkspaceEndpoint | Active |, | releasedAt set | Port leak |
+| UsageSession | RUNNING |, | Finalized atomically | Billing leak (RUNNING forever) |
+| MeterOutbox | Not yet created |, | Created via session finalize | Revenue leak |
 
 **Verification query**:
 ```sql
@@ -60,11 +60,11 @@ WHERE w.status = 'TERMINATING' AND w."updatedAt" < NOW() - INTERVAL '10 minutes'
 
 ### 3. RUNNING_ASSIGNED with no active usage session
 
-**How it happens**: `startUsageSession` fails after workspace reaches RUNNING_ASSIGNED (Prisma error, GpuSku not found returns $0 but session is still created — unless the create itself fails).
+**How it happens**: `startUsageSession` fails after workspace reaches RUNNING_ASSIGNED (Prisma error, GpuSku not found returns $0 but session is still created, unless the create itself fails).
 
 | Resource | State | Expected sweeper action | Actual sweeper action | Gap |
 |---|---|---|---|---|
-| UsageSession | Missing | Should exist for billing | None — no sweeper checks for this | **Gap: unbilled running workspace** |
+| UsageSession | Missing | Should exist for billing | None, no sweeper checks for this | **Gap: unbilled running workspace** |
 
 **Mitigation**: The idle-termination tick could cross-check: for every RUNNING_ASSIGNED workspace, verify a RUNNING UsageSession exists. If not, create one or flag an incident.
 
@@ -80,7 +80,7 @@ WHERE w.status = 'RUNNING_ASSIGNED' AND s.id IS NULL;
 
 ### 4. ENDED session with no meter outbox entry
 
-**How it happens**: Pre-remediation code closed session and outbox enqueue in separate calls. After remediation, this is atomic — but old data may have orphaned sessions.
+**How it happens**: Pre-remediation code closed session and outbox enqueue in separate calls. After remediation, this is atomic, but old data may have orphaned sessions.
 
 | Resource | State | Expected | Actual | Gap |
 |---|---|---|---|---|
@@ -159,9 +159,9 @@ WHERE j.status = 'FAILED';
 
 | Risk | Mitigation | Status |
 |---|---|---|
-| Double cleanup job | `workspaceCleanupJob` has `@unique` on `workspaceId` — upsert prevents duplicates | **Mitigated** |
+| Double cleanup job | `workspaceCleanupJob` has `@unique` on `workspaceId`, upsert prevents duplicates | **Mitigated** |
 | Double session close | `WHERE status: 'RUNNING'` + P2025 catch prevents double-close | **Mitigated** (post-remediation) |
-| Double GPU release | Second release sees GPU already FREE — no-op in code | **Mitigated** |
+| Double GPU release | Second release sees GPU already FREE, no-op in code | **Mitigated** |
 | Double Proxmox delete | `doesNotExist` error caught and swallowed | **Mitigated** |
 
 ---

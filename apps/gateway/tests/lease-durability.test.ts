@@ -1,12 +1,12 @@
 /**
- * Gateway Lease Durability Tests — Comprehensive Regression Suite
+ * Gateway Lease Durability Tests, Comprehensive Regression Suite
  *
  * Tests all invariants for port lease durability and gateway behavior:
  *
  * ALLOCATION:
- *  1. Allocate on clean DB — creates lease
- *  2. Duplicate allocate for same workspace — returns same lease
- *  3. Multiple workspaces — multiple independent leases
+ *  1. Allocate on clean DB, creates lease
+ *  2. Duplicate allocate for same workspace, returns same lease
+ *  3. Multiple workspaces, multiple independent leases
  *  4. Port uniqueness enforced at DB level
  *
  * RELEASE:
@@ -21,14 +21,14 @@
  * 11. Stale lease heuristic documented and tested
  *
  * DB-FIRST WRITE BEHAVIOR:
- * 12. DB write failure during allocate — in-memory rollback
+ * 12. DB write failure during allocate, in-memory rollback
  * 13. Released lease not in rebuilt cache
  *
  * HMAC VALIDATION:
- * 14. Correct signature — accepted
- * 15. Incorrect signature — rejected
- * 16. Altered body — rejected
- * 17. Missing signature — rejected
+ * 14. Correct signature, accepted
+ * 15. Incorrect signature, rejected
+ * 16. Altered body, rejected
+ * 17. Missing signature, rejected
  * 18. Timing-safe comparison on equal-length values
  *
  * OPERATIONAL:
@@ -296,7 +296,7 @@ describe('Release', () => {
 // =====================================================================
 
 describe('Restart and Reconciliation', () => {
-  test('lease survives simulated restart — DB query reconstructs state', async () => {
+  test('lease survives simulated restart, DB query reconstructs state', async () => {
     const wsId = await createTestWorkspace(testUserId);
     const lease = await createLease(wsId);
 

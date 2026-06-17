@@ -11,9 +11,9 @@
 
 | Allowed | Not Allowed |
 |---------|-------------|
-| ✅ GitHub for auth and repo access | ❌ External GPU providers (RunPod, etc.) |
-| ✅ Stripe for payments and billing | ❌ Third-party GPU hosting/marketplaces |
-| ✅ Users run their own code on Aldaro GPUs | ❌ Reselling third-party hosted models |
+| GitHub for auth and repo access | External GPU providers (RunPod, etc.) |
+| Stripe for payments and billing | Third-party GPU hosting/marketplaces |
+| Users run their own code on Aldaro GPUs | Reselling third-party hosted models |
 
 **Clarification:** Users can run their own inference APIs (FastAPI, Flask, etc.) on Aldaro GPUs. This is NOT the same as Aldaro reselling OpenAI/Anthropic/etc. models.
 
@@ -645,6 +645,6 @@ After completing the 20x lifecycle test, provide:
 
 ---
 
-**Architecture Status:** ✅ Approved  
+**Architecture Status:** Approved  
 **Implementation Status:** Ready for integration testing  
 **Launch Blocker:** Proxmox 20x lifecycle proof on real hardware

@@ -191,7 +191,7 @@ export class WorkspaceService {
       throw new Error('PAYMENT_METHOD_REQUIRED');
     }
 
-    // A12: defense-in-depth — block launch if already over a hard budget limit. The
+    // A12: defense-in-depth, block launch if already over a hard budget limit. The
     // budget-monitor enforces this asynchronously (every 15 min); this closes the
     // inter-tick window where a user could keep launching past their cap.
     if (user.monthlySoftLimitCents && user.monthlySoftLimitCents > 0 && user.hardLimitAction === 'AUTO_TERMINATE') {
@@ -455,8 +455,8 @@ export class WorkspaceService {
 
     const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
     if (!sku) {
-      // SECURITY: Refuse to launch at $0 — missing SKU is a config error, not a free GPU.
-      throw new Error(`[BILLING] GpuSku not found for key "${gpuType}" — cannot determine price. Launch blocked.`);
+      // SECURITY: Refuse to launch at $0, missing SKU is a config error, not a free GPU.
+      throw new Error(`[BILLING] GpuSku not found for key "${gpuType}", cannot determine price. Launch blocked.`);
     }
     return sku.pricePerHourCents || 0;
   }
@@ -492,7 +492,7 @@ export class WorkspaceService {
       } else {
         const sku = await prisma.gpuSku.findUnique({ where: { key: gpuType } });
         if (!sku) {
-          console.error(`[BILLING] GpuSku not found for key "${gpuType}" — session will have $0 pricing`);
+          console.error(`[BILLING] GpuSku not found for key "${gpuType}", session will have $0 pricing`);
         }
         pricePerHourCents = sku?.pricePerHourCents || 0;
       }
@@ -511,7 +511,7 @@ export class WorkspaceService {
       });
     } catch (err: any) {
       // P2002 = unique constraint violation from partial index (concurrent race).
-      // Another path already created the RUNNING session — safe to ignore.
+      // Another path already created the RUNNING session, safe to ignore.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         return;
       }
@@ -598,7 +598,7 @@ export class WorkspaceService {
 
   /**
    * Close a running usage session and atomically enqueue its meter event.
-   * Both writes happen in a single DB transaction — if either fails, neither commits.
+   * Both writes happen in a single DB transaction, if either fails, neither commits.
    * Safe for duplicate calls: skips if session is already ENDED.
    */
   async endUsageSession(workspaceId: string) {
@@ -645,7 +645,7 @@ export class WorkspaceService {
       ]);
     } catch (err: any) {
       // P2025 = session already closed by a concurrent path (worker cleanup racing API terminate).
-      // Safe to ignore — the session is already ENDED with an outbox entry.
+      // Safe to ignore, the session is already ENDED with an outbox entry.
       if (err?.code === 'P2025') return;
       throw err;
     }

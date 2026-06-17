@@ -42,9 +42,9 @@ Worker ID: worker-62afe756
 Infrastructure: Aldaro Fleet (Proxmox)
 External providers: DISABLED
 ============================================================
-✓ Proxmox connection validated
+Proxmox connection validated
 Attempting to acquire leader lock...
-✓ Acquired leader lock (fencing token: ec6ae201...)
+Acquired leader lock (fencing token: ec6ae201...)
 Warm pool tick interval: 30000ms
 Idle termination tick interval: 60000ms
 Incident detection tick interval: 30000ms
@@ -56,9 +56,9 @@ Incident detection tick interval: 30000ms
 
 - Worker called `pg_try_advisory_lock` via `$queryRaw` against Postgres
 - Lock acquired successfully (fencing token generated)
-- This is the operation that fails on SQLite — confirming the Postgres path works locally
+- This is the operation that fails on SQLite, confirming the Postgres path works locally
 
-## 6. Warm-Pool Tick — Clone Boundary
+## 6. Warm-Pool Tick, Clone Boundary
 
 The worker's first warm-pool tick:
 1. Found warm pool config: 1x RTX_5090 in US
@@ -67,7 +67,7 @@ The worker's first warm-pool tick:
 4. Allocated GPU (status → ALLOCATED)
 5. Created WorkspaceGpuAllocation record
 6. Attempted Proxmox clone: `POST /nodes/pve-node-01/qemu/9000/clone`
-7. **Failed**: `ENOTFOUND placeholder.local` — expected, no real Proxmox
+7. **Failed**: `ENOTFOUND placeholder.local`, expected, no real Proxmox
 
 This is the external infrastructure boundary. Everything before step 6 is locally proven. Step 6 and beyond require real Proxmox.
 
@@ -82,12 +82,12 @@ After the clone call failed, the worker's catch block executed:
 | lastErrorMessage recorded | Yes | `getaddrinfo ENOTFOUND placeholder.local` (truncated to 500 chars) |
 | GPU rolled back to FREE | Yes | Both GPUs show `status = 'FREE'`, `failureCount = 0` |
 | WorkspaceGpuAllocation deleted | Yes | 0 rows in table |
-| VM cleanup attempted | Yes (failed silently — no VM to delete) | Expected |
-| Usage session created? | No | 0 rows — correct, no session should exist for a failed provision |
-| Incident created? | No | 0 rows — correct, single provision failure doesn't trigger incident |
-| Cleanup job created? | No | 0 rows — correct, FAILED workspace doesn't need async cleanup |
-| Meter outbox created? | No | 0 rows — correct, no billing for failed workspace |
-| Workspace endpoints? | 0 rows | Correct — no ports allocated |
+| VM cleanup attempted | Yes (failed silently, no VM to delete) | Expected |
+| Usage session created? | No | 0 rows, correct, no session should exist for a failed provision |
+| Incident created? | No | 0 rows, correct, single provision failure doesn't trigger incident |
+| Cleanup job created? | No | 0 rows, correct, FAILED workspace doesn't need async cleanup |
+| Meter outbox created? | No | 0 rows, correct, no billing for failed workspace |
+| Workspace endpoints? | 0 rows | Correct, no ports allocated |
 
 **Assessment**: The warm-pool failure path handled the Proxmox clone error cleanly at the local level. The workspace was marked FAILED with error details, the GPU was rolled back, no orphan records were left. This is locally consistent behavior. Whether this same path handles all real-world failure modes (timeouts, partial clones, network interruptions mid-provision) is still unproven.
 

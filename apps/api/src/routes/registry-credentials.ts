@@ -44,7 +44,7 @@ function getEncryptionKey(): Buffer {
   }
   // Entropy check: reject obviously weak keys
   if (/^(.)\1+$/.test(key) || key === 'a'.repeat(key.length)) {
-    throw new Error('ENCRYPTION_KEY is too weak — use a cryptographically random string');
+    throw new Error('ENCRYPTION_KEY is too weak, use a cryptographically random string');
   }
   // Derive a consistent 32-byte key via SHA-256
   return crypto.createHash('sha256').update(key).digest();
@@ -82,7 +82,7 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
   fastify.addHook('preHandler', fastify.authenticate as any);
   fastify.addHook('preHandler', fastify.requireCustomerApproved as any);
 
-  // POST /registry-credentials — Save registry credentials
+  // POST /registry-credentials, Save registry credentials
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
     const { name, registryUrl, registryType, username, token } = createCredentialSchema.parse(request.body);
@@ -136,7 +136,7 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
     });
   });
 
-  // GET /registry-credentials — List user's credentials (never return decrypted token)
+  // GET /registry-credentials, List user's credentials (never return decrypted token)
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
 
@@ -159,7 +159,7 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
     return credentials;
   });
 
-  // DELETE /registry-credentials/:id — Delete credential
+  // DELETE /registry-credentials/:id, Delete credential
   fastify.delete('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -201,7 +201,7 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
     return { ok: true };
   });
 
-  // POST /registry-credentials/:id/verify — Test the credential
+  // POST /registry-credentials/:id/verify, Test the credential
   fastify.post('/:id/verify', async (request: any, reply) => {
     const userId = request.user.userId;
     const { id } = request.params as { id: string };
@@ -226,7 +226,7 @@ export const registryCredentialRoutes: FastifyPluginAsync = async (fastify: Fast
       const token = decryptToken(credential.encryptedToken);
       const registryUrl = credential.registryUrl.replace(/\/+$/, '');
 
-      // SECURITY: SSRF check — block requests to internal/private addresses
+      // SECURITY: SSRF check, block requests to internal/private addresses
       if (!isAllowedRegistryUrl(registryUrl)) {
         return {
           id: credential.id,

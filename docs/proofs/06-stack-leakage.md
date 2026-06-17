@@ -190,15 +190,15 @@ cat "$DIR/summary.txt"
 | # | Test | Expected Status | Expected Body Pattern | Remediation Applied |
 |---|---|---|---|---|
 | 1 | Terminate (gw down) | 202 | `{"ok":true,"status":"TERMINATING","queued":true}` | terminate is async, gw failure is cleanup-job's problem |
-| 2 | CORS rejection | Blocked/empty | No CORS headers for evil origin | — |
-| 3 | Rate limit | 429 | `{"error":"RATE_LIMITED",...}` | — |
-| 4 | CSRF failure | 403 | `{"errorCode":"CSRF_TOKEN_INVALID",...}` | — |
-| 5 | Cross-tenant | 404 | `{"error":"Not Found"}` or `{"error":"WORKSPACE_NOT_FOUND"}` | — |
+| 2 | CORS rejection | Blocked/empty | No CORS headers for evil origin |, |
+| 3 | Rate limit | 429 | `{"error":"RATE_LIMITED",...}` |, |
+| 4 | CSRF failure | 403 | `{"errorCode":"CSRF_TOKEN_INVALID",...}` |, |
+| 5 | Cross-tenant | 404 | `{"error":"Not Found"}` or `{"error":"WORKSPACE_NOT_FOUND"}` |, |
 | 6 | Bad JSON | 400 | `{"errorCode":"BAD_REQUEST","message":"Bad request",...}` | Global handler sanitizes parse error |
-| 7 | Unknown route | 404 | Fastify default `{"message":"Route not found",...}` | — |
+| 7 | Unknown route | 404 | Fastify default `{"message":"Route not found",...}` |, |
 | 8 | Validation failure | 400 | `{"error":"Invalid request."}` | `.flatten()` removed from client, server-log only |
 | 9 | Nonexistent workspace | 404 | Generic not found | `findUniqueOrThrow` → `findUnique` + 404 |
-| 10 | Unauthenticated | 401/404 | `{"error":"Unauthorized"}` or route not found | — |
+| 10 | Unauthenticated | 401/404 | `{"error":"Unauthorized"}` or route not found |, |
 
 ---
 
@@ -221,11 +221,11 @@ cat "$DIR/summary.txt"
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| API not in production mode | `NODE_ENV=development` may use a more verbose error handler — verify `NODE_ENV=production` |
-| Only testing known routes | Routes you don't test may have different error handling — this is a sample, not exhaustive |
-| Rate limiting not actually enforced | If rate limiter is disabled in staging, test 3 never reaches 429 — verify rate limiter config |
-| CSRF not enforced for this route | Some routes are CSRF-exempt (webhooks, internal) — verify the tested route requires CSRF |
-| Response body is empty | An empty 500 is safe (no leak) but indicates broken error handling — check both body AND status |
+| API not in production mode | `NODE_ENV=development` may use a more verbose error handler, verify `NODE_ENV=production` |
+| Only testing known routes | Routes you don't test may have different error handling, this is a sample, not exhaustive |
+| Rate limiting not actually enforced | If rate limiter is disabled in staging, test 3 never reaches 429, verify rate limiter config |
+| CSRF not enforced for this route | Some routes are CSRF-exempt (webhooks, internal), verify the tested route requires CSRF |
+| Response body is empty | An empty 500 is safe (no leak) but indicates broken error handling, check both body AND status |
 
 ---
 

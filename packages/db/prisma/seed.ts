@@ -59,12 +59,12 @@ async function main() {
   // ==========================================================================
   // 2. Bootstrap Test Accounts (for development and testing)
   // ==========================================================================
-  // A11 FIX: Demo/test accounts — including a known-password AUTHOR (admin) — must
+  // A11 FIX: Demo/test accounts, including a known-password AUTHOR (admin), must
   // never be created by an accidental seed run (e.g. NODE_ENV unset against a real DB).
   // Require an explicit positive opt-in in addition to the non-production guard, and
   // allow the demo passwords to be overridden via env.
   if (process.env.SEED_DEMO_USERS === 'true' && process.env.NODE_ENV !== 'production') {
-    console.warn('[seed] SEED_DEMO_USERS=true — creating demo/test accounts with known credentials. Never enable this in production.');
+    console.warn('[seed] SEED_DEMO_USERS=true, creating demo/test accounts with known credentials. Never enable this in production.');
     // Integration test user
     const testPassword = process.env.TEST_USER_PASSWORD || crypto.randomBytes(16).toString('hex');
     const testHash = await bcrypt.hash(testPassword, 10);

@@ -21,13 +21,13 @@
 
 | Proof | Required Evidence Files | Why |
 |---|---|---|
-| 01 — Staging readiness | `validate-env.txt`, `preflight.txt`, `service-health.txt` | Proves environment is configured and services respond |
-| 02 — Billing parity | `billing-stress.txt`, `billing-state-inspection.txt`, `constraint-tests.txt`, `stripe-meter-event.txt` | Proves session lifecycle + Stripe acceptance |
-| 03 — Terminate outage recovery | `terminate-test.txt`, `cleanup-state.txt`, `gateway-release.txt` | Proves terminate → cleanup → port release chain |
-| 04 — Last GPU contention | `concurrent-launch.txt`, `gpu-allocation-state.txt` | Proves exactly 1 GPU allocated under race |
-| 05 — Restore drill | `pg-dump.txt`, `pg-restore.txt`, `post-restore-check.txt` | Proves backup/restore cycle preserves data |
-| 06 — Stack leakage | `error-responses.txt`, `leak-scan.txt` | Proves no stack traces or internal details in responses |
-| 07 — Cleanup durability | `stale-workspace-cleanup.txt`, `cleanup-state-inspection.txt` | Proves stale states resolve to terminal states |
+| 01, Staging readiness | `validate-env.txt`, `preflight.txt`, `service-health.txt` | Proves environment is configured and services respond |
+| 02, Billing parity | `billing-stress.txt`, `billing-state-inspection.txt`, `constraint-tests.txt`, `stripe-meter-event.txt` | Proves session lifecycle + Stripe acceptance |
+| 03, Terminate outage recovery | `terminate-test.txt`, `cleanup-state.txt`, `gateway-release.txt` | Proves terminate → cleanup → port release chain |
+| 04, Last GPU contention | `concurrent-launch.txt`, `gpu-allocation-state.txt` | Proves exactly 1 GPU allocated under race |
+| 05, Restore drill | `pg-dump.txt`, `pg-restore.txt`, `post-restore-check.txt` | Proves backup/restore cycle preserves data |
+| 06, Stack leakage | `error-responses.txt`, `leak-scan.txt` | Proves no stack traces or internal details in responses |
+| 07, Cleanup durability | `stale-workspace-cleanup.txt`, `cleanup-state-inspection.txt` | Proves stale states resolve to terminal states |
 
 ---
 
@@ -47,8 +47,8 @@
 
 | Condition | Decision |
 |---|---|
-| All 7 proofs PASS + all archive checks pass | **GO** — evidence pack is launch-grade |
-| Any proof FAIL | **NO-GO** — identify failure, remediate, re-run that proof |
-| Any proof SKIP | **CONDITIONAL** — document why skipped, get founder sign-off |
-| Missing evidence files for a PASS proof | **INVALID** — re-run proof with proper evidence capture |
-| Manifest checksum mismatch | **INVALID** — evidence may be corrupted, re-run |
+| All 7 proofs PASS + all archive checks pass | **GO**, evidence pack is launch-grade |
+| Any proof FAIL | **NO-GO**, identify failure, remediate, re-run that proof |
+| Any proof SKIP | **CONDITIONAL**, document why skipped, get founder sign-off |
+| Missing evidence files for a PASS proof | **INVALID**, re-run proof with proper evidence capture |
+| Manifest checksum mismatch | **INVALID**, evidence may be corrupted, re-run |

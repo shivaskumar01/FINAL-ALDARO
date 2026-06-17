@@ -121,7 +121,7 @@ async function releaseCloneSemaphore(prisma: PrismaClient, workspaceId: string):
   });
 }
 
-const CLONE_SEMAPHORE_TIMEOUT_MS = 15 * 60_000; // 15 minutes — clones should never take this long
+const CLONE_SEMAPHORE_TIMEOUT_MS = 15 * 60_000; // 15 minutes, clones should never take this long
 
 /**
  * Release orphaned clone semaphores that have been held longer than the timeout.
@@ -311,8 +311,8 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
   // 5. Acquire clone semaphore (prevents storage array DoS from concurrent clones)
   const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, workspaceId);
   if (!acquired) {
-    console.log(`[WarmPool] Deferring warm workspace ${workspaceId} — clone semaphore full on ${gpu.node.name}`);
-    // Rollback GPU allocation and workspace — will retry next tick
+    console.log(`[WarmPool] Deferring warm workspace ${workspaceId}, clone semaphore full on ${gpu.node.name}`);
+    // Rollback GPU allocation and workspace, will retry next tick
     await prisma.fleetGpu.update({ where: { id: gpu.id }, data: { status: 'FREE', currentWorkspaceId: null } });
     await prisma.workspaceGpuAllocation.deleteMany({ where: { workspaceId } });
     await prisma.workspace.delete({ where: { id: workspaceId } });
@@ -343,7 +343,7 @@ async function spawnWarmWorkspace(prisma: PrismaClient, cfg: { gpuType: string; 
     console.log(`[WarmPool] Clone completed for workspace ${workspaceId}`);
 
     // 6. Configure VM with GPU passthrough + VLAN isolation
-    // Warm pool VMs get an isolated management VLAN — no tenant cross-talk
+    // Warm pool VMs get an isolated management VLAN, no tenant cross-talk
     console.log(`[WarmPool] Attaching GPU ${gpu.pciAddress} to workspace ${workspaceId}`);
     await proxmox.updateVmConfig(gpu.node.name, newVmid, {
       hostpci0: `${gpu.pciAddress},pcie=1`,
@@ -560,8 +560,8 @@ async function provisionColdWorkspace(prisma: PrismaClient, ws: any) {
   // Acquire clone semaphore
   const acquired = await acquireCloneSemaphore(prisma, gpu.node.name, ws.id);
   if (!acquired) {
-    console.log(`[WarmPool] Deferring cold workspace ${ws.id} — clone semaphore full on ${gpu.node.name}`);
-    // Rollback GPU — will retry next tick
+    console.log(`[WarmPool] Deferring cold workspace ${ws.id}, clone semaphore full on ${gpu.node.name}`);
+    // Rollback GPU, will retry next tick
     await prisma.fleetGpu.update({ where: { id: gpu.id }, data: { status: 'FREE', currentWorkspaceId: null } });
     await prisma.workspaceGpuAllocation.deleteMany({ where: { workspaceId: ws.id } });
     await prisma.workspace.update({ where: { id: ws.id }, data: { proxmoxNode: null, proxmoxVmid: null } });
@@ -707,7 +707,7 @@ async function provisionS3Bucket(prisma: PrismaClient, ws: any): Promise<{ acces
       timeout: 10000,
     });
 
-    // SECURITY: Encrypt secret key before storing — never store plaintext
+    // SECURITY: Encrypt secret key before storing, never store plaintext
     const encKey = process.env.ENCRYPTION_KEY;
     if (!encKey || encKey.length < 32) {
       throw new Error('ENCRYPTION_KEY must be set and >= 32 characters to provision S3 buckets');
@@ -809,7 +809,7 @@ async function sendCustomImageStartup(prisma: PrismaClient, ws: any): Promise<vo
       }
     } catch (err) {
       console.error(`[WarmPool] Failed to decrypt registry credential for workspace ${ws.id}:`, err);
-      // Continue without registry auth — the image may be public
+      // Continue without registry auth, the image may be public
     }
   }
 
@@ -839,7 +839,7 @@ async function startUsageSessionForColdWorkspace(prisma: PrismaClient, ws: any):
   let pricePerHourCents = 0;
 
   if (ws.lockedSpotPriceCents != null && ws.lockedSpotPriceCents > 0) {
-    // Use the price captured at launch time — this is the price the user saw at checkout
+    // Use the price captured at launch time, this is the price the user saw at checkout
     pricePerHourCents = ws.lockedSpotPriceCents;
   } else {
     // Fallback for workspaces created before this fix was deployed
@@ -852,7 +852,7 @@ async function startUsageSessionForColdWorkspace(prisma: PrismaClient, ws: any):
       const sku = await prisma.gpuSku.findFirst({ where: { key: ws.gpuType } });
       pricePerHourCents = sku?.pricePerHourCents || 0;
     }
-    console.warn(`[BILLING] Workspace ${ws.id} had no lockedSpotPriceCents — using fallback price ${pricePerHourCents}`);
+    console.warn(`[BILLING] Workspace ${ws.id} had no lockedSpotPriceCents, using fallback price ${pricePerHourCents}`);
   }
 
   try {
@@ -868,7 +868,7 @@ async function startUsageSessionForColdWorkspace(prisma: PrismaClient, ws: any):
     });
     console.log(`[BILLING] Started usage session for cold workspace ${ws.id} at ${pricePerHourCents} cents/hr (locked at launch)`);
   } catch (err: any) {
-    // P2002 = unique constraint — another path already created the session
+    // P2002 = unique constraint, another path already created the session
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return;
     }
@@ -1033,7 +1033,7 @@ export async function terminateWorkspace(prisma: PrismaClient, id: string, reaso
     });
   }
 
-  // Release gateway ports (best effort — if gateway is down, log and continue)
+  // Release gateway ports (best effort, if gateway is down, log and continue)
   try {
     await releaseGatewayPorts(ws.id);
   } catch (err) {

@@ -28,7 +28,7 @@ function getDerivedKey(): Buffer | null {
   return _derivedKey;
 }
 
-/** Legacy SHA-256 key derivation — used only as a decryption fallback for pre-HKDF data. */
+/** Legacy SHA-256 key derivation, used only as a decryption fallback for pre-HKDF data. */
 function getLegacyKey(): Buffer | null {
   if (_legacyKey) return _legacyKey;
   const key = process.env.ENCRYPTION_KEY;
@@ -41,7 +41,7 @@ export function encryptSecret(plaintext: string): string {
   const key = getDerivedKey();
   if (!key) {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('ENCRYPTION_KEY is required in production — refusing to store plaintext secret');
+      throw new Error('ENCRYPTION_KEY is required in production, refusing to store plaintext secret');
     }
     return plaintext;
   }
@@ -55,7 +55,7 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(stored: string): string {
   if (!stored.startsWith(ENCRYPTED_PREFIX)) {
-    return stored; // legacy plaintext — return as-is
+    return stored; // legacy plaintext, return as-is
   }
 
   const key = getDerivedKey();

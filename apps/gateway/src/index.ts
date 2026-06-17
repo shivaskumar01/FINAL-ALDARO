@@ -16,7 +16,7 @@ import { PrismaClient } from '@prisma/client';
  * - In-memory Maps are a fast cache reconstructed from DB on startup.
  * - Allocate writes to DB first, then updates cache.
  * - Release writes to DB first, then updates cache.
- * - On crash/restart, cache is rebuilt from DB — no leases are lost.
+ * - On crash/restart, cache is rebuilt from DB, no leases are lost.
  *
  * SECURITY MODEL:
  * - Internal service only - should be network-isolated
@@ -71,7 +71,7 @@ function verifyJwt(token: string): { valid: boolean; payload?: any } {
 }
 
 // ---------------------------------------------------------------------------
-// SSRF Protection — block proxying to internal services
+// SSRF Protection, block proxying to internal services
 // ---------------------------------------------------------------------------
 const ALLOWED_VM_SUBNET = process.env.VM_SUBNET || '10.10.'; // Workspace VMs live here
 const BLOCKED_PORTS = new Set([22, 5432, 6379, 9000, 2379, 2380]); // SSH, Postgres, Redis, MinIO admin, etcd
@@ -129,7 +129,7 @@ if (TLS_CERT_PATH && TLS_KEY_PATH) {
       key: fs.readFileSync(TLS_KEY_PATH),
       cert: fs.readFileSync(TLS_CERT_PATH),
     };
-    console.log('[GATEWAY] TLS enabled — serving HTTPS directly');
+    console.log('[GATEWAY] TLS enabled, serving HTTPS directly');
   } catch (err) {
     console.error(`[GATEWAY] Failed to load TLS cert/key: ${(err as Error).message}`);
     process.exit(1);
@@ -145,11 +145,11 @@ const PORT_RANGE_START = 20000;
 const PORT_RANGE_END = 40000;
 const GATEWAY_HOST = process.env.GATEWAY_HOST || 'gw1.aldaro.ai';
 
-// In-memory cache — rebuilt from DB on startup and kept in sync via allocate/release.
+// In-memory cache, rebuilt from DB on startup and kept in sync via allocate/release.
 const activeAllocations = new Map<string, { ssh: number; jupyter: number; vscode: number; ip: string }>();
 const allocatedPorts = new Set<number>();
 
-// Exposed port cache — maps subdomain to routing info
+// Exposed port cache, maps subdomain to routing info
 interface ExposedPortMapping {
   workspace_id: string;
   user_id: string;
@@ -227,7 +227,7 @@ async function reconcileLeases() {
   });
 
   for (const stale_lease of staleLeases) {
-    console.warn(`[GATEWAY] Stale lease detected for workspace ${stale_lease.workspaceId} — auto-releasing`);
+    console.warn(`[GATEWAY] Stale lease detected for workspace ${stale_lease.workspaceId}, auto-releasing`);
     await prisma.workspaceEndpoint.update({
       where: { id: stale_lease.id },
       data: { releasedAt: new Date() },
@@ -319,7 +319,7 @@ fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
 
   if (!serviceSecret) {
     if (!isProduction) {
-      console.warn('[Gateway] WARNING: No GATEWAY_SHARED_SECRET set — auth bypassed in dev mode');
+      console.warn('[Gateway] WARNING: No GATEWAY_SHARED_SECRET set, auth bypassed in dev mode');
       return;
     }
     return reply.status(500).send({ error: 'Server misconfigured' });
@@ -422,7 +422,7 @@ fastify.post('/internal/gateway/allocate', async (request, reply) => {
   });
 
   // In production, configure iptables/nftables for port forwarding here.
-  // NOT YET IMPLEMENTED — see docs/gateway-local-validation.md for current state.
+  // NOT YET IMPLEMENTED, see docs/gateway-local-validation.md for current state.
 
   return {
     gateway_host: GATEWAY_HOST,
@@ -435,7 +435,7 @@ fastify.post('/internal/gateway/allocate', async (request, reply) => {
 fastify.post('/internal/gateway/release', async (request, reply) => {
   const { workspace_id } = releaseSchema.parse(request.body);
 
-  // Write to DB first (mark released). Idempotent — safe if already released or not found.
+  // Write to DB first (mark released). Idempotent, safe if already released or not found.
   const updated = await prisma.workspaceEndpoint.updateMany({
     where: { workspaceId: workspace_id, releasedAt: null },
     data: { releasedAt: new Date() },
@@ -463,7 +463,7 @@ fastify.post('/internal/gateway/release', async (request, reply) => {
 fastify.post('/internal/gateway/expose-port', async (request, reply) => {
   const { workspace_id, internal_port, subdomain, vm_internal_ip, access_mode, user_id } = exposePortSchema.parse(request.body);
 
-  // SECURITY: Block SSRF — only allow proxying to workspace VM subnet
+  // SECURITY: Block SSRF, only allow proxying to workspace VM subnet
   if (!isAllowedProxyTarget(vm_internal_ip, internal_port)) {
     return reply.status(400).send({
       error: 'Invalid target',
@@ -740,10 +740,10 @@ const start = async () => {
     if (process.env.DATABASE_URL) {
       await reconcileLeases();
     } else if (isProduction || process.env.NODE_ENV === 'staging') {
-      console.error('FATAL: DATABASE_URL is required in production/staging — ephemeral mode is not safe');
+      console.error('FATAL: DATABASE_URL is required in production/staging, ephemeral mode is not safe');
       process.exit(1);
     } else {
-      console.warn('[GATEWAY] No DATABASE_URL — running in ephemeral mode (no lease persistence). This is only safe for local development.');
+      console.warn('[GATEWAY] No DATABASE_URL, running in ephemeral mode (no lease persistence). This is only safe for local development.');
     }
 
     const port = parseInt(process.env.GATEWAY_PORT || '5001');

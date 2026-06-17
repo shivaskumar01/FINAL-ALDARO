@@ -14,7 +14,7 @@ function computeStatus(multiplier: number): string {
 export const spotPricingRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   /**
    * GET /spot-pricing
-   * Public endpoint — returns current spot prices for all GPU types.
+   * Public endpoint, returns current spot prices for all GPU types.
    * No auth required for pricing transparency.
    */
   fastify.get('/', {
@@ -65,7 +65,7 @@ export const spotPricingRoutes: FastifyPluginAsync = async (fastify: FastifyInst
 
   /**
    * GET /spot-pricing/:gpuType
-   * Public endpoint — returns spot price for a specific GPU type.
+   * Public endpoint, returns spot price for a specific GPU type.
    */
   fastify.get('/:gpuType', {
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },

@@ -23,7 +23,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   fastify.addHook('preHandler', fastify.authenticate as any);
 
   // -------------------------------------------------------------------------
-  // POST /api-keys — Generate a new API key
+  // POST /api-keys, Generate a new API key
   // -------------------------------------------------------------------------
   fastify.post('/', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -46,7 +46,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       },
     });
 
-    // Return the raw key ONCE — it cannot be retrieved again
+    // Return the raw key ONCE, it cannot be retrieved again
     return reply.status(201).send({
       id: apiKey.id,
       name: apiKey.name,
@@ -60,7 +60,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   });
 
   // -------------------------------------------------------------------------
-  // GET /api-keys — List user's API keys (never show raw key)
+  // GET /api-keys, List user's API keys (never show raw key)
   // -------------------------------------------------------------------------
   fastify.get('/', async (request: any) => {
     const userId = request.user.userId;
@@ -84,7 +84,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   });
 
   // -------------------------------------------------------------------------
-  // PUT /api-keys/:id — Update key name or scopes
+  // PUT /api-keys/:id, Update key name or scopes
   // -------------------------------------------------------------------------
   fastify.put('/:id', async (request: any, reply) => {
     const userId = request.user.userId;
@@ -126,7 +126,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   });
 
   // -------------------------------------------------------------------------
-  // DELETE /api-keys/:id — Revoke an API key (soft delete)
+  // DELETE /api-keys/:id, Revoke an API key (soft delete)
   // -------------------------------------------------------------------------
   fastify.delete('/:id', async (request: any, reply) => {
     const userId = request.user.userId;

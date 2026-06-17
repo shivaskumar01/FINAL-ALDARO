@@ -233,7 +233,7 @@ describe('Billing Stress Tests', () => {
     expect(outbox.length).toBe(1);
   });
 
-  test('20 workspaces: open, close, verify — no leaks', async () => {
+  test('20 workspaces: open, close, verify, no leaks', async () => {
     const workspaces = await Promise.all(
       Array.from({ length: 20 }, (_, i) => createTestWorkspace(`batch-${i}`))
     );

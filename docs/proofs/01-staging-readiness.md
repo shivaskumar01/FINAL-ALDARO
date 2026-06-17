@@ -1,6 +1,6 @@
 # Proof 01: Staging Readiness
 
-**Gate proof — all other proofs require this to pass first.**
+**Gate proof, all other proofs require this to pass first.**
 
 ---
 
@@ -124,11 +124,11 @@ psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM usage_sessions WHERE status = 'RUN
 
 | Scenario | Why it looks like a pass but isn't |
 |---|---|
-| Health returns 200 but DB is wrong database | API connects to any Postgres — verify `DATABASE_URL` points to `aldaro_staging` |
-| GPU SKU exists but with $0 pricing | Session will be created with `pricePerHourCents=0` — billing proof will pass mathematically but bill nothing |
-| Fleet GPU shows FREE but wrong PCI address | Provisioning will fail at GPU passthrough step — not caught by this proof |
-| Worker acquires lock but Proxmox URL is wrong | Worker starts but all provisioning will fail — verify Proxmox reachability separately |
-| Gateway starts in ephemeral mode | If `DATABASE_URL` is missing for gateway, it runs without persistence — hard-fail added for production/staging but verify |
+| Health returns 200 but DB is wrong database | API connects to any Postgres, verify `DATABASE_URL` points to `aldaro_staging` |
+| GPU SKU exists but with $0 pricing | Session will be created with `pricePerHourCents=0`, billing proof will pass mathematically but bill nothing |
+| Fleet GPU shows FREE but wrong PCI address | Provisioning will fail at GPU passthrough step, not caught by this proof |
+| Worker acquires lock but Proxmox URL is wrong | Worker starts but all provisioning will fail, verify Proxmox reachability separately |
+| Gateway starts in ephemeral mode | If `DATABASE_URL` is missing for gateway, it runs without persistence, hard-fail added for production/staging but verify |
 
 ---
 

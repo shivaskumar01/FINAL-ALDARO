@@ -17,7 +17,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   fastify.addHook('preHandler', fastify.authenticate as any);
   fastify.addHook('preHandler', fastify.requireAuthor as any);
 
-  // GET /api/ops/tickets — list all tickets
+  // GET /api/ops/tickets, list all tickets
   fastify.get('/', async (request: any) => {
     const query = z.object({
       status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED']).optional(),
@@ -40,7 +40,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     return { tickets };
   });
 
-  // GET /api/ops/tickets/:id — full ticket with messages, session, workspace
+  // GET /api/ops/tickets/:id, full ticket with messages, session, workspace
   fastify.get('/:id', async (request: any, reply: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
 
@@ -76,7 +76,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     return { ticket, session };
   });
 
-  // POST /api/ops/tickets/:id/refund — refund the linked usage session
+  // POST /api/ops/tickets/:id/refund, refund the linked usage session
   fastify.post('/:id/refund', {
     config: {
       rateLimit: {
@@ -114,7 +114,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           const balanceTx = await stripe.customers.createBalanceTransaction(user.stripeCustomerId, {
             amount: -refundCents, // negative = credit
             currency: 'usd',
-            description: `Refund for ticket ${ticket.id} — session ${session.id}`,
+            description: `Refund for ticket ${ticket.id}, session ${session.id}`,
           });
           stripeRefundId = balanceTx.id;
         }
@@ -124,7 +124,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         return reply.status(502).send({ error: 'Stripe refund failed. Check server logs for details.' });
       }
     } else {
-      console.warn(`[OPS] STRIPE_SECRET_KEY not set — recording refund locally only`);
+      console.warn(`[OPS] STRIPE_SECRET_KEY not set, recording refund locally only`);
     }
 
     await prisma.supportTicket.update({
@@ -143,7 +143,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     };
   });
 
-  // POST /api/ops/tickets/:id/quarantine-gpu — mark GPU as MAINTENANCE
+  // POST /api/ops/tickets/:id/quarantine-gpu, mark GPU as MAINTENANCE
   fastify.post('/:id/quarantine-gpu', async (request: any, reply: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({
@@ -157,7 +157,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     if (!gpu) return reply.status(404).send({ error: 'GPU not found' });
 
     // SECURITY: Verify GPU is related to the ticket's workspace/session.
-    // Tickets without a linked session cannot quarantine GPUs — prevents
+    // Tickets without a linked session cannot quarantine GPUs, prevents
     // arbitrary GPU quarantine by creating unlinked tickets.
     if (!ticket.usageSessionId) {
       return reply.status(400).send({ error: 'Cannot quarantine GPU: ticket has no linked usage session' });
@@ -203,7 +203,7 @@ export const opsTicketRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     };
   });
 
-  // PATCH /api/ops/tickets/:id — update ticket status
+  // PATCH /api/ops/tickets/:id, update ticket status
   fastify.patch('/:id', async (request: any, reply: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({

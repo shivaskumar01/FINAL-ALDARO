@@ -9,13 +9,13 @@
 
 **Aldaro rents compute only from Aldaro-owned GPU fleet.**
 
-- ❌ No external GPU capacity
-- ❌ No RunPod or third-party GPU hosting
-- ❌ No GPU marketplaces or "bring someone else's GPUs"
-- ❌ No third-party AI model hosting resale (no reselling OpenAI/Anthropic/etc.)
-- ✅ GitHub allowed for auth and repo access only
-- ✅ Stripe allowed for payments and billing
-- ✅ Users can run their own inference code on Aldaro GPUs
+- No external GPU capacity
+- No RunPod or third-party GPU hosting
+- No GPU marketplaces or "bring someone else's GPUs"
+- No third-party AI model hosting resale (no reselling OpenAI/Anthropic/etc.)
+- GitHub allowed for auth and repo access only
+- Stripe allowed for payments and billing
+- Users can run their own inference code on Aldaro GPUs
 
 ---
 
@@ -27,7 +27,7 @@ This document tracks the fixes applied based on the security and architecture au
 
 ## Priority Fixes (Completed First)
 
-### 1. ✅ Secrets and Build Artifacts Removed
+### 1. Secrets and Build Artifacts Removed
 
 **Issue:** Zip included node_modules, .next, logs, dev.db, .env files, and .git history with exposed secrets.
 
@@ -48,7 +48,7 @@ This document tracks the fixes applied based on the security and architecture au
 
 ---
 
-### 2. ✅ External GPU Provider Code Removed
+### 2. External GPU Provider Code Removed
 
 **Issue:** Code paths provisioning from RunPod violated Aldaro-owned-only requirement.
 
@@ -70,7 +70,7 @@ AFTER:  API → Proxmox API → Aldaro-owned GPUs
 
 ---
 
-### 3. ✅ Real Proxmox Provisioning Implemented
+### 3. Real Proxmox Provisioning Implemented
 
 **Issue:** Provisioning used random vmid and random internal IP (mocked).
 
@@ -98,7 +98,7 @@ AFTER:  API → Proxmox API → Aldaro-owned GPUs
 
 ## Additional Fixes
 
-### 4. ✅ Worker Split Brain Fixed
+### 4. Worker Split Brain Fixed
 
 **Issue:** Worker logic in both API (embedded tick) and standalone worker.
 
@@ -110,7 +110,7 @@ AFTER:  API → Proxmox API → Aldaro-owned GPUs
 
 ---
 
-### 5. ✅ Auth Model Secured
+### 5. Auth Model Secured
 
 **Issue:** Frontend used localStorage tokens, middleware accepted query params.
 
@@ -128,7 +128,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 6. ✅ Security Hardening Applied
+### 6. Security Hardening Applied
 
 **Issue:** API logged secrets, used hardcoded defaults, CSRF secure flag false, HMAC vulnerable.
 
@@ -149,7 +149,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 7. ✅ Gateway Auth Added
+### 7. Gateway Auth Added
 
 **Issue:** Gateway internal endpoints had no authentication.
 
@@ -166,7 +166,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 8. ✅ Billing Integration Completed
+### 8. Billing Integration Completed
 
 **Issue:** Sessions computed billedCents but stopped at TODO comment.
 
@@ -177,7 +177,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 9. ✅ Prisma Client Singleton
+### 9. Prisma Client Singleton
 
 **Issue:** Multiple files created `new PrismaClient()` causing connection churn.
 
@@ -189,7 +189,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 10. ✅ Workspace Credentials Generated
+### 10. Workspace Credentials Generated
 
 **Issue:** `connectJupyterUrl` used `token=FIXME`.
 
@@ -201,7 +201,7 @@ NO query param tokens (URL leakage)
 
 ---
 
-### 11. ✅ Prisma Schema Updated
+### 11. Prisma Schema Updated
 
 **Issue:** Schema used SQLite, migrations targeted Postgres with inconsistent fields.
 

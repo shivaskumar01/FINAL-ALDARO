@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   fastify.addHook('preHandler', fastify.authenticate as any);
 
-  // GET /support/tickets — list user's tickets (paginated)
+  // GET /support/tickets, list user's tickets (paginated)
   fastify.get('/tickets', async (request: any) => {
     const userId = request.user.userId;
     const { page: rawPage = '1', limit: rawLimit = '20' } = request.query as any;
@@ -29,7 +29,7 @@ export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     return { tickets, total, page, limit };
   });
 
-  // GET /support/tickets/:id — ticket detail with messages
+  // GET /support/tickets/:id, ticket detail with messages
   fastify.get('/tickets/:id', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const role = request.user.role;
@@ -55,7 +55,7 @@ export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     return { ticket };
   });
 
-  // POST /support/tickets — create ticket
+  // POST /support/tickets, create ticket
   fastify.post('/tickets', async (request: any) => {
     const userId = request.user.userId;
     const body = z.object({
@@ -80,7 +80,7 @@ export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     return { ticket };
   });
 
-  // POST /support/tickets/:id/messages — add message to ticket
+  // POST /support/tickets/:id/messages, add message to ticket
   fastify.post('/tickets/:id/messages', async (request: any, reply: any) => {
     const userId = request.user.userId;
     const role = request.user.role;
@@ -116,7 +116,7 @@ export const supportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     return { message };
   });
 
-  // GET /support/sessions — list user's recent sessions for ticket dropdown
+  // GET /support/sessions, list user's recent sessions for ticket dropdown
   fastify.get('/sessions', async (request: any) => {
     const userId = request.user.userId;
     const sessions = await prisma.usageSession.findMany({

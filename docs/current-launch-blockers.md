@@ -25,9 +25,9 @@ These cannot be resolved without external credentials/hardware.
 
 | # | Blocker | File | Status | Effort |
 |---|---|---|---|---|
-| ~~C1~~ | ~~Partial unique index for one RUNNING session per workspace~~ | ~~Raw SQL migration~~ | **CLOSED** — migration applied, 8 tests pass | — |
-| ~~C2~~ | ~~No `unhandledRejection` process handler~~ | API, Worker, Gateway | **CLOSED** — handlers added to all 3 services | — |
-| ~~C3~~ | ~~GPU release in cleanup not guarded against missing GPU record~~ | ~~`worker/src/jobs/workspace-cleanup.ts`~~ | **CLOSED** — guard added with structured warning log | — |
+| ~~C1~~ | ~~Partial unique index for one RUNNING session per workspace~~ | ~~Raw SQL migration~~ | **CLOSED**, migration applied, 8 tests pass |, |
+| ~~C2~~ | ~~No `unhandledRejection` process handler~~ | API, Worker, Gateway | **CLOSED**, handlers added to all 3 services |, |
+| ~~C3~~ | ~~GPU release in cleanup not guarded against missing GPU record~~ | ~~`worker/src/jobs/workspace-cleanup.ts`~~ | **CLOSED**, guard added with structured warning log |, |
 | C4 | No periodic sweep for stale WorkspaceEndpoints (only gateway restart) | Worker tick or new job | Not started | 2 hours |
 
 **Impact**: C1 is medium-severity (double-billing risk under concurrent race). C2-C4 are low-severity edge cases.
@@ -55,7 +55,7 @@ These are remediated and locally verified (L1) but not yet proven in staging (L2
 | Scenario | Can we launch? | Why |
 |---|---|---|
 | All B-blockers resolved + all proofs pass | **YES** | Full L2 evidence |
-| B-blockers resolved but C1 not done | **CONDITIONAL** — only if single-writer model holds | Application guard works but not DB-enforced |
+| B-blockers resolved but C1 not done | **CONDITIONAL**, only if single-writer model holds | Application guard works but not DB-enforced |
 | B-blockers resolved but some proofs fail | **NO** | Failed proof = unproven risk |
 | B-blockers still open | **NO** | Cannot even attempt proofs |
 

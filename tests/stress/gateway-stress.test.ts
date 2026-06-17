@@ -113,7 +113,7 @@ describe('Gateway Stress Tests', () => {
     const fulfilled = results.filter(r => r.status === 'fulfilled');
     const rejected = results.filter(r => r.status === 'rejected');
 
-    // Some may fail due to port uniqueness collisions — that's OK
+    // Some may fail due to port uniqueness collisions, that's OK
     // The important thing is no unhandled crash
     expect(fulfilled.length).toBeGreaterThan(0);
     console.log(`Succeeded: ${fulfilled.length}, Failed: ${rejected.length}`);

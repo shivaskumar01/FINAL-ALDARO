@@ -238,7 +238,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     try {
       const token = request.cookies[SESSION_COOKIE_NAME];
       if (token) {
-        // SECURITY: verify signature, don't just decode — prevents forged userId in logs
+        // SECURITY: verify signature, don't just decode, prevents forged userId in logs
         const decoded = fastify.jwt.verify(token) as any;
         userId = decoded?.userId;
         // A13: revoke this access token's jti for its remaining TTL so a stolen token
@@ -289,7 +289,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     };
   });
 
-  // POST /auth/refresh — Silent token refresh
+  // POST /auth/refresh, Silent token refresh
   // SECURITY: This is the enforcement point for session revocation.
   // Blocked/banned users are rejected here, forcing logout within 15 minutes.
   // CSRF exempt: protected by sameSite:strict on refresh cookie + CORS policy.
@@ -322,7 +322,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       return reply.status(401).send({ error: 'Invalid or expired refresh token' });
     }
 
-    // SECURITY: DB check — verify user is still active and password hasn't changed
+    // SECURITY: DB check, verify user is still active and password hasn't changed
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -339,7 +339,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       return reply.status(401).send({ error: 'Invalid refresh token' });
     }
 
-    // SECURITY: Reject BLOCKED/banned users — forces logout within 15 minutes
+    // SECURITY: Reject BLOCKED/banned users, forces logout within 15 minutes
     if (user.accountStatus !== 'ACTIVE') {
       await logSecurityEvent(request, user.id, SecurityEventType.LOGIN_FAILURE, {
         reason: 'REFRESH_BLOCKED_USER',
@@ -416,7 +416,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
 
       await logSecurityEvent(request, user.id, SecurityEventType.PW_RESET_REQ);
       
-      // SECURITY: Token sent via email outbox only — never log raw tokens.
+      // SECURITY: Token sent via email outbox only, never log raw tokens.
       console.log(`[Auth] Password reset requested for user ${user.id}`);
     }
 
